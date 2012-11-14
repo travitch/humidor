@@ -19,7 +19,8 @@ library
   exposed-modules: Smoke.C,
                    Smoke.Gen
   -- other-modules:
-  build-depends: base == 4.*, containers, directory, mtl, haskell-src
+  build-depends: base == 4.*, containers, directory, mtl, filepath,
+                 haskell-src-exts, regex-compat-tdfa
   c-sources: src/c++/smoke.cpp
   extra-libraries: stdc++
   cc-options: -I/tmp/smoke/root/include -DHAVE_QTGUI

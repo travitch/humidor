@@ -6,7 +6,11 @@ module Smoke.Gen (
   ) where
 
 import Control.Monad.Reader
+import Language.Haskell.Exts.Pretty
+import Language.Haskell.Exts.Syntax
 import System.Directory
+import System.FilePath
+import Text.Regex
 
 import Smoke.C
 
@@ -35,5 +39,32 @@ generateSmokeModule conf m =
   where
     action = mapM_ generateSmokeClass (smokeModuleClasses m)
 
+locationForClass :: SmokeClass -> Gen FilePath
+locationForClass c = do
+  moduleName <- asks snd
+  destDir <- asks (generatorDestDir . fst)
+  modNameMap <- asks (generatorModuleNameMap . fst)
+  let undot ch = if ch == '.' then '/' else ch
+  return $ destDir </> map undot (modNameMap moduleName) </> typeModuleName <.> "hs"
+  where
+    cname = smokeClassName c
+    typeModuleName = subRegex (mkRegex "::") cname "/"
+
+classModuleName :: SmokeClass -> Gen String
+classModuleName c = do
+  moduleName <- asks snd
+  modNameMap <- asks (generatorModuleNameMap . fst)
+  return $ modNameMap moduleName <.> typeModuleName
+  where
+    cname = smokeClassName c
+    typeModuleName = subRegex (mkRegex "::") cname "."
+
 generateSmokeClass :: SmokeClass -> Gen ()
-generateSmokeClass = undefined
+generateSmokeClass c = do
+  fname <- locationForClass c
+  lift $ createDirectoryIfMissing True (dropFileName fname)
+  mname <- classModuleName c
+  let loc = SrcLoc fname 0 0
+      m = Module loc (ModuleName mname) [] Nothing Nothing [] []
+      s = prettyPrint m
+  lift $ writeFile fname s

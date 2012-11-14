@@ -3,11 +3,16 @@ module Main ( main ) where
 import Control.Monad ( forM_ )
 import Data.List ( intercalate )
 import Text.Printf
+
 import Smoke.C
+import Smoke.Gen
 
 main :: IO ()
 main = do
   smokeModules <- smokeInitialize
+  let conf = GeneratorConfig (const "Qt.Gui") "/tmp/genqt"
+  mapM_ (generateSmokeModule conf) smokeModules
+  {-
   putStrLn ("Found " ++ show (length smokeModules) ++ " smoke modules")
   mapM_ printSmoke smokeModules
   return ()
@@ -29,3 +34,4 @@ returnTypeString = csmokeTypeName . smokeMethodRet
 argumentTypeString :: SmokeMethod -> String
 argumentTypeString m =
   intercalate ", " (map csmokeTypeName (smokeMethodArgs m))
+-}
