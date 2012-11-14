@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <vector>
 #include <stdlib.h>
-#include <stdio.h>
 
 extern "C" {
   Smoke** smokeInitialize()
@@ -16,10 +15,8 @@ extern "C" {
 #ifdef HAVE_QTGUI
     init_qtgui_Smoke();
     smokes.push_back(qtgui_Smoke);
-    printf("Initialized qtgui\n");
 #endif
     smokes.push_back(0);
-    printf("%d smokes (w/ null terminator)\n", smokes.size());
 
     Smoke **ret = (Smoke**)calloc(smokes.size(), sizeof(Smoke*));
     std::copy(smokes.begin(), smokes.end(), ret);
