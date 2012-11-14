@@ -1,5 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
-module Qt.C (
+module Smoke.C (
   SmokeModule(..),
   SmokeClass(..),
   SmokeMethod(..),
@@ -98,6 +98,8 @@ instance Storable CSmokeType where
   alignment _ = 8
   peek ptr = do
     sp <- c_smokeTypeName ptr
+    -- The void type has a null pointer for its name (and zeros for
+    -- its other info).  Special case it
     name <- if sp /= nullPtr then peekCString sp else return "void"
     cid <- c_smokeTypeClassId ptr
     flags <- c_smokeTypeFlags ptr
@@ -140,7 +142,6 @@ loadSmokeModule h = do
   mnp <- c_smokeModuleName h
   modName <- peekCString mnp
   classPtrs <- smokeClasses h
-  -- The first one is blank
   methodPtrs <- smokeMethods h
   methodNames <- c_smokeMethodNames h
   argMapper <- initializeArgMapper h

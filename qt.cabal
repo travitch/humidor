@@ -16,9 +16,10 @@ cabal-version:       >=1.10
 
 library
   default-language: Haskell2010
-  exposed-modules: Qt.C
+  exposed-modules: Smoke.C,
+                   Smoke.Gen
   -- other-modules:
-  build-depends: base == 4.*, containers
+  build-depends: base == 4.*, containers, directory, mtl, haskell-src
   c-sources: src/c++/smoke.cpp
   extra-libraries: stdc++
   cc-options: -I/tmp/smoke/root/include -DHAVE_QTGUI

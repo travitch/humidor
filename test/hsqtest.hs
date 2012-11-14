@@ -3,7 +3,7 @@ module Main ( main ) where
 import Control.Monad ( forM_ )
 import Data.List ( intercalate )
 import Text.Printf
-import Qt.C
+import Smoke.C
 
 main :: IO ()
 main = do
