@@ -151,3 +151,7 @@ makeMethodType c m =
     ft = TyFun selfVar argsType
     selfVar = TyVar $ Ident "self"
     cname = UnQual $ Ident $ ("IsA" ++ T.unpack (smokeClassName c))
+
+-- Note, using the IsAX constraints here is very useful because we can
+-- define all of the IsAX classes in a convenient base package.  Then
+-- we can define the X here and add all of the instances we need.
