@@ -3,14 +3,21 @@ module Smoke.C (
   SmokeModule(..),
   SmokeClass(..),
   SmokeMethod(..),
+  methodIsDestructor,
+  methodIsConstructor,
+  methodIsCopyConstructor,
+  methodIsEnum,
   CSmokeType(..),
   smokeInitialize
   ) where
 
 import Control.Monad ( foldM )
+import Data.Bits
 import Data.Map ( Map )
 import qualified Data.Map as M
 import Data.Maybe ( mapMaybe )
+import Data.Text ( Text )
+import qualified Data.Text as T
 import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
@@ -24,7 +31,7 @@ newtype Index = I Int
 -- something
 
 data CSmokeClass =
-  CSmokeClass { csmokeClassName :: String
+  CSmokeClass { csmokeClassName :: Text
               , csmokeClassExternal :: Bool
               , csmokeClassParents :: Index
               , csmokeClassCallMethod :: Ptr ()
@@ -44,7 +51,7 @@ instance Storable CSmokeClass where
     parents <- c_smokeClassParents ptr
     flags <- c_smokeClassFlags ptr
     size <- c_smokeClassSize ptr
-    return CSmokeClass { csmokeClassName = cname
+    return CSmokeClass { csmokeClassName = T.pack cname
                        , csmokeClassExternal = extByte /= 0
                        , csmokeClassParents = toIndex parents
                        , csmokeClassCallMethod = nullPtr
@@ -87,7 +94,7 @@ instance Storable CSmokeMethod where
   poke = undefined
 
 data CSmokeType =
-  CSmokeType { csmokeTypeName :: String
+  CSmokeType { csmokeTypeName :: Text
              , csmokeTypeClassIndex :: Index
              , csmokeTypeFlags :: CUInt
              }
@@ -103,7 +110,7 @@ instance Storable CSmokeType where
     name <- if sp /= nullPtr then peekCString sp else return "void"
     cid <- c_smokeTypeClassId ptr
     flags <- c_smokeTypeFlags ptr
-    return $ CSmokeType name (toIndex cid) flags
+    return $ CSmokeType (T.pack name) (toIndex cid) flags
   poke = undefined
 
 toIndex :: CInt -> Index
@@ -111,7 +118,6 @@ toIndex = I . fromIntegral
 
 ptrSize :: Int
 ptrSize = sizeOf (nullPtr :: Ptr ())
-
 
 smokeHandles :: IO [SmokeHandle]
 smokeHandles = do
@@ -151,7 +157,7 @@ loadSmokeModule h = do
   classes <- mapM (fromCClass ilist classIdMap) classPtrs
   let s0 = M.fromList $ zip [1..] classes
   cs <- foldM (buildSmokeClasses methodNames argMapper) s0 methodPtrs
-  return SmokeModule { smokeModuleName = modName
+  return SmokeModule { smokeModuleName = T.pack modName
                      , smokeModuleClasses = M.elems cs
                      }
 
@@ -196,7 +202,7 @@ buildSmokeClasses methodNames argMapper acc cmeth = do
   mname <- peekElemOff methodNames nameIndex >>= peekCString
   ats <- argumentTypes argMapper (csmokeMethodArgsIndex cmeth)
   rt <- returnType argMapper (csmokeMethodRetIndex cmeth)
-  let smeth = SmokeMethod { smokeMethodName = mname
+  let smeth = SmokeMethod { smokeMethodName = T.pack mname
                           , smokeMethodArgs = ats
                           , smokeMethodFlags = csmokeMethodFlags cmeth
                           , smokeMethodRet = rt
@@ -215,24 +221,37 @@ smokeMethods :: SmokeHandle -> IO [CSmokeMethod]
 smokeMethods s = peekArray s c_smokeMethods c_smokeNumMethods
 
 data SmokeMethod =
-  SmokeMethod { smokeMethodName :: String
+  SmokeMethod { smokeMethodName :: Text
               , smokeMethodArgs :: [CSmokeType]
               , smokeMethodFlags :: CUInt
               , smokeMethodRet :: CSmokeType
               , smokeMethodIndex :: Index
               }
 
+methodIsDestructor :: SmokeMethod -> Bool
+methodIsDestructor = (/=0) . (.&. 0x40) . smokeMethodFlags
+
+methodIsCopyConstructor :: SmokeMethod -> Bool
+methodIsCopyConstructor = (/=0) . (.&. 0x04) . smokeMethodFlags
+
+methodIsConstructor :: SmokeMethod -> Bool
+methodIsConstructor = (/=0) . (.&. 0x20) . smokeMethodFlags
+
+-- | Oddly enough, enum values appear as methods.
+methodIsEnum :: SmokeMethod -> Bool
+methodIsEnum = (/=0) . (.&. 0x10) . smokeMethodFlags
+
 data SmokeClass =
-  SmokeClass { smokeClassName :: String
+  SmokeClass { smokeClassName :: Text
              , smokeClassMethods :: [SmokeMethod]
              , smokeClassExternal :: Bool
-             , smokeClassParents :: [String] -- [SmokeClass]
+             , smokeClassParents :: [Text] -- [SmokeClass]
              , smokeClassFlags :: CUInt
              }
 
 data SmokeModule =
   SmokeModule { smokeModuleClasses :: [SmokeClass]
-              , smokeModuleName :: String
+              , smokeModuleName :: Text
               }
 
 -- Unmarshal helpers

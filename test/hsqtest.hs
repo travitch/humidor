@@ -1,7 +1,9 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Main ( main ) where
 
 import Control.Monad ( forM_ )
 import Data.List ( intercalate )
+import Data.Text ()
 import Text.Printf
 
 import Smoke.C
@@ -10,7 +12,7 @@ import Smoke.Gen
 main :: IO ()
 main = do
   smokeModules <- smokeInitialize
-  let conf = GeneratorConfig (const "Qt.Gui") "/tmp/genqt"
+  let conf = (defaultGeneratorConfig "/tmp/genqt") { generatorModuleNameMap = const "Qt.Gui" }
   mapM_ (generateSmokeModule conf) smokeModules
   {-
   putStrLn ("Found " ++ show (length smokeModules) ++ " smoke modules")

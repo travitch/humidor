@@ -19,8 +19,8 @@ library
   exposed-modules: Smoke.C,
                    Smoke.Gen
   -- other-modules:
-  build-depends: base == 4.*, containers, directory, mtl, filepath,
-                 haskell-src-exts, regex-compat-tdfa
+  build-depends: base == 4.*, containers, directory, mtl, filepath, text,
+                 haskell-src-exts
   c-sources: src/c++/smoke.cpp
   extra-libraries: stdc++
   cc-options: -I/tmp/smoke/root/include -DHAVE_QTGUI
@@ -32,6 +32,6 @@ library
 executable hsqtest
   default-language: Haskell2010
   main-is: hsqtest.hs
-  build-depends: base == 4.*, qt
+  build-depends: base == 4.*, text, qt
   hs-source-dirs: test
   ghc-options: -Wall
