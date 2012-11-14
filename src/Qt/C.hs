@@ -91,7 +91,7 @@ instance Storable CSmokeType where
   alignment _ = 8
   peek ptr = do
     sp <- c_smokeTypeName ptr
-    name <- peekCString sp
+    name <- if sp /= nullPtr then peekCString sp else return "void"
     cid <- c_smokeTypeClassId ptr
     flags <- c_smokeTypeFlags ptr
     return $ CSmokeType name (toIndex cid) flags
@@ -155,6 +155,12 @@ smokeInitialize = do
   handles <- smokeHandles
   mapM loadSmokeModule handles
 
+initializeArgMapper :: SmokeHandle -> IO ArgumentMapper
+initializeArgMapper h = do
+  argList <- c_smokeArgumentList h
+  typeList <- c_smokeTypes h
+  return $ ArgumentMapper argList typeList
+
 loadSmokeModule :: SmokeHandle -> IO SmokeModule
 loadSmokeModule h = do
   mnp <- c_smokeModuleName h
@@ -163,9 +169,10 @@ loadSmokeModule h = do
   -- The first one is blank
   methodPtrs <- smokeMethods h
   methodNames <- c_smokeMethodNames h
+  argMapper <- initializeArgMapper h
   let classIdMap = M.fromList $ zip [1..] classPtrs
       s0 = fmap fromCClass classIdMap
-  cs <- foldM (buildSmokeClasses methodNames) s0 methodPtrs
+  cs <- foldM (buildSmokeClasses methodNames argMapper) s0 methodPtrs
   return SmokeModule { smokeModuleName = modName
                      , smokeModuleClasses = M.elems cs
                      }
@@ -178,20 +185,36 @@ fromCClass cc = SmokeClass { smokeClassMethods = []
                            , smokeClassName = csmokeClassName cc
                            }
 
+data ArgumentMapper = ArgumentMapper (Ptr CShort) SmokeTypeHandle
+
+argumentTypes :: ArgumentMapper -> Index -> IO [CSmokeType]
+argumentTypes (ArgumentMapper a t) (I ix) = do
+  -- use @ix@ as an index into the list of argument lists.  Read off
+  -- all of the shorts (using peekElemOff) until one is zero.
+  typeIndices <- untilM (==0) (peekElemOff a) [ix..]
+  mapM (peekElemOff t . fromIntegral) typeIndices
+
+returnType :: ArgumentMapper -> Index -> IO CSmokeType
+returnType (ArgumentMapper _ t) (I ix) =
+  peekElemOff t ix
+
 buildSmokeClasses :: Ptr CString
+                     -> ArgumentMapper
                      -> Map Int SmokeClass
                      -> CSmokeMethod
                      -> IO (Map Int SmokeClass)
-buildSmokeClasses methodNames acc cmeth = do
+buildSmokeClasses methodNames argMapper acc cmeth = do
   -- Look up the class id of the current method and add this method to
   -- it.
   let I nameIndex = csmokeMethodNameIndex cmeth
       I cindex = csmokeMethodClassIndex cmeth
   mname <- peekElemOff methodNames nameIndex >>= peekCString
+  ats <- argumentTypes argMapper (csmokeMethodArgsIndex cmeth)
+  rt <- returnType argMapper (csmokeMethodRetIndex cmeth)
   let smeth = SmokeMethod { smokeMethodName = mname
-                          , smokeMethodArgs = []
+                          , smokeMethodArgs = ats
                           , smokeMethodFlags = csmokeMethodFlags cmeth
-                          , smokeMethodRet = 0
+                          , smokeMethodRet = rt
                           , smokeMethodIndex = csmokeMethodMethodIndex cmeth
                           }
   case M.lookup cindex acc of
@@ -208,9 +231,9 @@ smokeMethods s = peekArray s c_smokeMethods c_smokeNumMethods
 
 data SmokeMethod =
   SmokeMethod { smokeMethodName :: String
-              , smokeMethodArgs :: [Int]
+              , smokeMethodArgs :: [CSmokeType]
               , smokeMethodFlags :: CUInt
-              , smokeMethodRet :: Int
+              , smokeMethodRet :: CSmokeType
               , smokeMethodIndex :: Index
               }
 
@@ -227,6 +250,8 @@ data SmokeModule =
               , smokeModuleName :: String
               }
 
+-- Unmarshal helpers
+
 peekArray :: (Integral c, Storable b) =>
              a -> (a -> IO (Ptr b)) -> (a -> IO c) -> IO [b]
 peekArray obj arrAccessor sizeAccessor = do
@@ -241,3 +266,14 @@ peekArray obj arrAccessor sizeAccessor = do
     peekCons ptr acc ix = do
       elt <- peekElemOff ptr ix
       return $ elt : acc
+
+-- Generic helpers
+untilM :: (Storable a) => (a -> Bool) -> (Int -> IO a) -> [Int] -> IO [a]
+untilM p action ixs = go [] ixs
+  where
+    go acc [] = return (reverse acc)
+    go acc (ix:rest) = do
+      elt <- action ix
+      case p elt of
+        True -> return (reverse acc)
+        False -> go (elt : acc) rest

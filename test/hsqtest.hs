@@ -1,6 +1,7 @@
 module Main ( main ) where
 
 import Control.Monad ( forM_ )
+import Data.List ( intercalate )
 import Text.Printf
 import Qt.C
 
@@ -17,4 +18,11 @@ printSmoke m = do
   forM_ (smokeModuleClasses m) $ \c -> do
     _ <- printf "  %s\n" (smokeClassName c)
     forM_ (smokeClassMethods c) $ \f -> do
-      printf "    %s\n" (smokeMethodName f)
+      printf "    %s %s(%s)\n" (returnTypeString f) (smokeMethodName f) (argumentTypeString f)
+
+returnTypeString :: SmokeMethod -> String
+returnTypeString = csmokeTypeName . smokeMethodRet
+
+argumentTypeString :: SmokeMethod -> String
+argumentTypeString m =
+  intercalate ", " (map csmokeTypeName (smokeMethodArgs m))
