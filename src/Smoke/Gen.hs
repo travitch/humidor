@@ -64,7 +64,9 @@ generateSmokeClass c = do
   fname <- locationForClass c
   lift $ createDirectoryIfMissing True (dropFileName fname)
   mname <- classModuleName c
+  -- Make a typeclass for each non-constructor method
   let loc = SrcLoc fname 0 0
-      m = Module loc (ModuleName mname) [] Nothing Nothing [] []
+      prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
+      m = Module loc (ModuleName mname) [prag] Nothing Nothing [] []
       s = prettyPrint m
   lift $ writeFile fname s
