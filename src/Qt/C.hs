@@ -1,9 +1,16 @@
 {-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
-module Qt.C where
+module Qt.C (
+  SmokeModule(..),
+  SmokeClass(..),
+  SmokeMethod(..),
+  CSmokeType(..),
+  smokeInitialize
+  ) where
 
 import Control.Monad ( foldM )
 import Data.Map ( Map )
 import qualified Data.Map as M
+import Data.Maybe ( mapMaybe )
 import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
@@ -100,42 +107,9 @@ instance Storable CSmokeType where
 toIndex :: CInt -> Index
 toIndex = I . fromIntegral
 
-fromShort :: CShort -> Index
-fromShort = I . fromIntegral
-
 ptrSize :: Int
 ptrSize = sizeOf (nullPtr :: Ptr ())
 
-indexSize :: Int
-indexSize = sizeOf (undefined :: CShort)
-
-foreign import ccall "smokeInitialize" c_smokeInitialize :: IO (Ptr SmokeHandle)
-foreign import ccall "smokeClasses" c_smokeClasses :: SmokeHandle -> IO SmokeClassHandle
-foreign import ccall "smokeNumClasses" c_smokeNumClasses :: SmokeHandle -> IO CInt
-foreign import ccall "smokeMethods" c_smokeMethods :: SmokeHandle -> IO SmokeMethodHandle
-foreign import ccall "smokeNumMethods" c_smokeNumMethods :: SmokeHandle -> IO CInt
-foreign import ccall "smokeMethodNames" c_smokeMethodNames :: SmokeHandle -> IO (Ptr CString)
-foreign import ccall "smokeNumMethodNames" c_smokeNumMethodNames :: SmokeHandle -> IO CInt
-foreign import ccall "smokeTypes" c_smokeTypes :: SmokeHandle -> IO SmokeTypeHandle
-foreign import ccall "smokeNumTypes" c_smokeNumTypes :: SmokeHandle -> IO CInt
-foreign import ccall "smokeArgumentList" c_smokeArgumentList :: SmokeHandle -> IO (Ptr CShort)
-foreign import ccall "smokeModuleName" c_smokeModuleName :: SmokeHandle -> IO CString
-foreign import ccall "free" c_free :: Ptr () -> IO ()
-foreign import ccall "smokeClassName" c_smokeClassName :: SmokeClassHandle -> IO CString
-foreign import ccall "smokeClassExternal" c_smokeClassExternal :: SmokeClassHandle -> IO CInt
-foreign import ccall "smokeClassParents" c_smokeClassParents :: SmokeClassHandle -> IO CInt
-foreign import ccall "smokeClassFlags" c_smokeClassFlags :: SmokeClassHandle -> IO CUInt
-foreign import ccall "smokeClassSize" c_smokeClassSize :: SmokeClassHandle -> IO CInt
-foreign import ccall "smokeMethodClassId" c_smokeMethodClassId :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodName" c_smokeMethodName :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodArgs" c_smokeMethodArgs :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodNumArgs" c_smokeMethodNumArgs :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodFlags" c_smokeMethodFlags :: SmokeMethodHandle -> IO CUInt
-foreign import ccall "smokeMethodRet" c_smokeMethodRet :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodMethod" c_smokeMethodMethod :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeTypeName" c_smokeTypeName :: SmokeTypeHandle -> IO CString
-foreign import ccall "smokeTypeClassId" c_smokeTypeClassId :: SmokeTypeHandle -> IO CInt
-foreign import ccall "smokeTypeFlags" c_smokeTypeFlags :: SmokeTypeHandle -> IO CUInt
 
 smokeHandles :: IO [SmokeHandle]
 smokeHandles = do
@@ -170,20 +144,30 @@ loadSmokeModule h = do
   methodPtrs <- smokeMethods h
   methodNames <- c_smokeMethodNames h
   argMapper <- initializeArgMapper h
+  ilist <- c_smokeInheritanceList h
+
   let classIdMap = M.fromList $ zip [1..] classPtrs
-      s0 = fmap fromCClass classIdMap
+  classes <- mapM (fromCClass ilist classIdMap) classPtrs
+  let s0 = M.fromList $ zip [1..] classes
   cs <- foldM (buildSmokeClasses methodNames argMapper) s0 methodPtrs
   return SmokeModule { smokeModuleName = modName
                      , smokeModuleClasses = M.elems cs
                      }
 
-fromCClass :: CSmokeClass -> SmokeClass
-fromCClass cc = SmokeClass { smokeClassMethods = []
-                           , smokeClassExternal = csmokeClassExternal cc
-                           , smokeClassParents = []
-                           , smokeClassFlags = csmokeClassFlags cc
-                           , smokeClassName = csmokeClassName cc
-                           }
+fromCClass :: Ptr CShort -> Map Int CSmokeClass -> CSmokeClass -> IO SmokeClass
+fromCClass il classIdMap cc = do
+  let (I pix) = csmokeClassParents cc
+  parentClasses <- untilM (==0) (peekElemOff il) [pix..]
+  return SmokeClass { smokeClassMethods = []
+                    , smokeClassExternal = csmokeClassExternal cc
+                    , smokeClassParents = mapMaybe lookupParent parentClasses
+                    , smokeClassFlags = csmokeClassFlags cc
+                    , smokeClassName = csmokeClassName cc
+                    }
+  where
+    lookupParent parentIndex = do
+      p <- M.lookup (fromIntegral parentIndex) classIdMap
+      return (csmokeClassName p)
 
 data ArgumentMapper = ArgumentMapper (Ptr CShort) SmokeTypeHandle
 
@@ -241,7 +225,7 @@ data SmokeClass =
   SmokeClass { smokeClassName :: String
              , smokeClassMethods :: [SmokeMethod]
              , smokeClassExternal :: Bool
-             , smokeClassParents :: [SmokeClass]
+             , smokeClassParents :: [String] -- [SmokeClass]
              , smokeClassFlags :: CUInt
              }
 
@@ -277,3 +261,32 @@ untilM p action ixs = go [] ixs
       case p elt of
         True -> return (reverse acc)
         False -> go (elt : acc) rest
+
+foreign import ccall "smokeInitialize" c_smokeInitialize :: IO (Ptr SmokeHandle)
+foreign import ccall "smokeClasses" c_smokeClasses :: SmokeHandle -> IO SmokeClassHandle
+foreign import ccall "smokeNumClasses" c_smokeNumClasses :: SmokeHandle -> IO CInt
+foreign import ccall "smokeMethods" c_smokeMethods :: SmokeHandle -> IO SmokeMethodHandle
+foreign import ccall "smokeNumMethods" c_smokeNumMethods :: SmokeHandle -> IO CInt
+foreign import ccall "smokeMethodNames" c_smokeMethodNames :: SmokeHandle -> IO (Ptr CString)
+foreign import ccall "smokeNumMethodNames" c_smokeNumMethodNames :: SmokeHandle -> IO CInt
+foreign import ccall "smokeTypes" c_smokeTypes :: SmokeHandle -> IO SmokeTypeHandle
+foreign import ccall "smokeNumTypes" c_smokeNumTypes :: SmokeHandle -> IO CInt
+foreign import ccall "smokeArgumentList" c_smokeArgumentList :: SmokeHandle -> IO (Ptr CShort)
+foreign import ccall "smokeInheritanceList" c_smokeInheritanceList :: SmokeHandle -> IO (Ptr CShort)
+foreign import ccall "smokeModuleName" c_smokeModuleName :: SmokeHandle -> IO CString
+foreign import ccall "free" c_free :: Ptr () -> IO ()
+foreign import ccall "smokeClassName" c_smokeClassName :: SmokeClassHandle -> IO CString
+foreign import ccall "smokeClassExternal" c_smokeClassExternal :: SmokeClassHandle -> IO CInt
+foreign import ccall "smokeClassParents" c_smokeClassParents :: SmokeClassHandle -> IO CInt
+foreign import ccall "smokeClassFlags" c_smokeClassFlags :: SmokeClassHandle -> IO CUInt
+foreign import ccall "smokeClassSize" c_smokeClassSize :: SmokeClassHandle -> IO CInt
+foreign import ccall "smokeMethodClassId" c_smokeMethodClassId :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodName" c_smokeMethodName :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodArgs" c_smokeMethodArgs :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodNumArgs" c_smokeMethodNumArgs :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodFlags" c_smokeMethodFlags :: SmokeMethodHandle -> IO CUInt
+foreign import ccall "smokeMethodRet" c_smokeMethodRet :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodMethod" c_smokeMethodMethod :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeTypeName" c_smokeTypeName :: SmokeTypeHandle -> IO CString
+foreign import ccall "smokeTypeClassId" c_smokeTypeClassId :: SmokeTypeHandle -> IO CInt
+foreign import ccall "smokeTypeFlags" c_smokeTypeFlags :: SmokeTypeHandle -> IO CUInt

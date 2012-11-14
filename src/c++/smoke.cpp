@@ -69,6 +69,11 @@ extern "C" {
     return smoke->argumentList;
   }
 
+  short* smokeInheritanceList(Smoke *smoke)
+  {
+    return smoke->inheritanceList;
+  }
+
   const char* smokeModuleName(Smoke *smoke)
   {
     return smoke->moduleName();

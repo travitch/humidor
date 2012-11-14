@@ -16,9 +16,12 @@ printSmoke :: SmokeModule -> IO ()
 printSmoke m = do
   _ <- printf "Module: %s\n" (smokeModuleName m)
   forM_ (smokeModuleClasses m) $ \c -> do
-    _ <- printf "  %s\n" (smokeClassName c)
+    _ <- printf "  %s [%s]\n" (smokeClassName c) (parentClassString c)
     forM_ (smokeClassMethods c) $ \f -> do
       printf "    %s %s(%s)\n" (returnTypeString f) (smokeMethodName f) (argumentTypeString f)
+
+parentClassString :: SmokeClass -> String
+parentClassString = intercalate ", " . smokeClassParents
 
 returnTypeString :: SmokeMethod -> String
 returnTypeString = csmokeTypeName . smokeMethodRet
