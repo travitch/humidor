@@ -108,12 +108,11 @@ generateSmokeClass c = do
   -- Make a typeclass for each non-constructor method
   (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
   let tcs = M.elems tcMap
-      prag = LanguagePragma loc [Ident "MultiParamTypeClasses", Ident "EmptyDataDecls"]
+      prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
       decls = tds ++ tcs
       exports = tdsExp : tcExp
       m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [] decls
-      s = prettyPrint m
-  lift $ writeFile fname s
+  lift $ writeFile fname (prettyPrint m)
 
 
 -- | Something like:
