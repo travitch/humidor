@@ -33,6 +33,10 @@ data GeneratorConfig =
                   , generatorConstructorMangler :: Text -> Text
                     -- ^ The name mangling to use for constructors.
                     -- (default: new+{constructor})
+                  , generatorClassNameMangler :: Text -> Text
+                    -- ^ The name mangling scheme to turn a class name
+                    -- into the subclass typeclass marker
+                    -- (IsASubclassOfX).
                   , generatorDestDir :: FilePath
                     -- ^ The directory in which all of the generated
                     -- Haskell module source files will be placed
@@ -44,6 +48,7 @@ defaultGeneratorConfig destDir =
   GeneratorConfig { generatorModuleNameMap = id
                   , generatorMethodClassNameMap = mtcname
                   , generatorConstructorMangler = conName
+                  , generatorClassNameMangler = isAClass
                   , generatorDestDir = destDir
                   }
   where
@@ -53,6 +58,7 @@ defaultGeneratorConfig destDir =
         [] -> t
         c:rest -> T.pack $ C.toUpper c : rest
     conName = mappend "new"
+    isAClass = mappend "IsA"
 
 type Gen = ReaderT (GeneratorConfig, Text) IO
 
@@ -96,14 +102,33 @@ generateSmokeClass c = do
   let loc = SrcLoc fname 0 0
   lift $ createDirectoryIfMissing True (dropFileName fname)
   mname <- classModuleName c
+  -- Make a data type declaration for the class, and declare it as an
+  -- instance of this class as well as all of its parent classes
+  (tdsExp, tds) <- makeClassTypeDefinition loc c
   -- Make a typeclass for each non-constructor method
-  tcMap <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
-
+  (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
   let tcs = M.elems tcMap
-      prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
-      m = Module loc (ModuleName mname) [prag] Nothing Nothing [] tcs
+      prag = LanguagePragma loc [Ident "MultiParamTypeClasses", Ident "EmptyDataDecls"]
+      decls = tds ++ tcs
+      exports = tdsExp : tcExp
+      m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [] decls
       s = prettyPrint m
   lift $ writeFile fname s
+
+
+-- | Something like:
+--
+-- > data QClassName
+-- > instance IsAQClass QClassName
+-- > instance IsAQParent QClassName
+makeClassTypeDefinition :: SrcLoc -> SmokeClass -> Gen (ExportSpec, [Decl])
+makeClassTypeDefinition loc c = do
+  cmangler <- asks (generatorClassNameMangler . fst)
+  let conDataType = TyApp (TyCon (UnQual (Ident "Ptr"))) unit_tycon
+      cname = Ident $ T.unpack $ smokeClassName c
+      conDecl = QualConDecl loc [] [] $ ConDecl cname [UnBangedTy conDataType]
+      ddecl = DataDecl loc NewType [] cname [] [conDecl] []
+  return (EAbs (UnQual cname), [ddecl])
 
 -- | Make a typeclass for the method (if a typeclass for another
 -- method of the same name hasn't already been made).  Instances will
@@ -115,15 +140,17 @@ generateSmokeClass c = do
 -- Note, will need to make special provisions for constructors (they
 -- return a fixed type and have no self argument).  Do not forget to
 -- ignore destructors.
-makeClassForMethod :: SrcLoc -> SmokeClass -> Map Text Decl -> SmokeMethod -> Gen (Map Text Decl)
-makeClassForMethod loc c acc m
-  | methodIsDestructor m || methodIsCopyConstructor m || methodIsEnum m = return acc
+makeClassForMethod :: SrcLoc -> SmokeClass -> ([ExportSpec], Map Text Decl)
+                      -> SmokeMethod -> Gen ([ExportSpec], Map Text Decl)
+makeClassForMethod loc c a@(exports, acc) m
+  | methodIsDestructor m || methodIsCopyConstructor m || methodIsEnum m = return a
   | otherwise = do
     nameMap <- asks (generatorMethodClassNameMap . fst)
     cmangler <- asks (generatorConstructorMangler . fst)
     case M.lookup methodName acc of
-      Just _ -> return acc
+      Just _ -> return a
       Nothing -> do
+        mtype <- makeMethodType c m
         let ctx = []
             cname = Ident $ T.unpack $ nameMap methodName
             mname = case methodIsConstructor m of
@@ -131,18 +158,31 @@ makeClassForMethod loc c acc m
               True -> Ident $ T.unpack (cmangler methodName)
             argsVar = UnkindedVar $ Ident "xargs"
             retVar = UnkindedVar $ Ident "xret"
-            mtype = makeMethodType c m
             mdecl = ClsDecl $ TypeSig loc [mname] mtype
             tc = ClassDecl loc ctx cname [argsVar, retVar] [] [mdecl]
-        return $ M.insert methodName tc acc
+        return $ (EThingAll (UnQual cname) : exports, M.insert methodName tc acc)
   where
     methodName = smokeMethodName m
 
-makeMethodType :: SmokeClass -> SmokeMethod -> Type
+-- | The type for a method declaration is (for normal methods):
+--
+-- > (IsAQFoo self) => self -> xargs -> Qt xret
+--
+-- For constructors, it is
+--
+-- > xargs -> Qt xret
+--
+-- Different overloads of each method will have different tuple
+-- instances for xargs.
+makeMethodType :: SmokeClass -> SmokeMethod -> Gen Type
 makeMethodType c m =
   case methodIsConstructor m of
-    False -> TyForall Nothing [ClassA cname [selfVar]] ft
-    True -> argsType
+    False -> do
+      cmangler <- asks (generatorClassNameMangler . fst)
+      let cname = cmangler $ smokeClassName c
+          constraint = UnQual $ Ident $ T.unpack cname
+      return $ TyForall Nothing [ClassA constraint [selfVar]] ft
+    True -> return argsType
   where
     argTy = TyVar $ Ident "xargs"
     retTy = TyVar $ Ident "xret"
@@ -150,8 +190,63 @@ makeMethodType c m =
     argsType = TyFun argTy (TyApp ioTy retTy)
     ft = TyFun selfVar argsType
     selfVar = TyVar $ Ident "self"
-    cname = UnQual $ Ident $ ("IsA" ++ T.unpack (smokeClassName c))
 
 -- Note, using the IsAX constraints here is very useful because we can
 -- define all of the IsAX classes in a convenient base package.  Then
 -- we can define the X here and add all of the instances we need.
+
+
+-- A note on overriding virtual methods.
+--
+-- To extend class C:
+--
+-- 1) Allocate an instance of C using a constructor (somehow closing
+-- over extra values to add data to the underlying class... maybe just
+-- use Qt properties)
+--
+-- > // set up call
+-- > void *obj = stack[0].s_voidp;
+--
+-- 2) Use the 0th method to set a custom SmokeBinding (that has been
+-- passed its set of overridden methods).  This is the magic that lets
+-- the smoke wrappers override virtual methods.
+--
+-- > MySmokeBinding b(qtgui_Smoke, {5:overrideSize, 6:overridePaint});
+-- > Smoke::StackItem stack[2];
+-- > stack[1].s_voidp = &b;
+-- > klass->classFn(0, obj, stack);
+--
+-- The SmokeBinding is always called when a virtual method is invoked.
+-- If it returns True, it has handled the call.  If it returns False,
+-- the original method is called.  The custom SmokeBinding we use will
+-- have to take as an argument its overrides, which will be checked at
+-- runtime ine callMethod.
+--
+-- It seems to be the case that *all* instances must be initialized
+-- with a binding.  This SmokeBinding also provides a hook to run code
+-- when an object is deleted.
+--
+-- A possible API design for subclassing:
+--
+-- > myOverrides = makeOverrides $ M.fromList [ ("paint", myPaint) ]
+-- >
+-- > newCustomButton lbl = subclass qButtonClass myOverrides
+--
+-- where myPaint has an appropriate signature and will be wrapped in a
+-- FuncPtr by subclass.  qButtonClass will have to be a data CAF
+-- decalred in Qt.Gui.QButton that provides enough information for
+-- subclass to look up the method index of the thing being overridden.
+--
+-- This will require manual instance declarations OR TemplateHaskell.
+-- Problem, TemplateHaskell and C++ don't seem to always play nicely
+-- together.
+--
+-- subclass should return a function that acts as a constructor.  The
+-- question of how to attach new data is difficult - perhaps
+-- properties could be used.  Closing over some data would be
+-- difficult; maybe we can just add extra data on the SmokeBinding,
+-- accessible by IORef.  Properties may be possible with setProperty,
+-- which can create new "dynamic properties".
+--
+-- If a virtual method has several overloads, we may need to pass in
+-- smoke-style mangled names.
