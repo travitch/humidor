@@ -123,12 +123,24 @@ generateSmokeClass c = do
 -- > instance IsAQParent QClassName
 makeClassTypeDefinition :: SrcLoc -> SmokeClass -> Gen (ExportSpec, [Decl])
 makeClassTypeDefinition loc c = do
-  cmangler <- asks (generatorClassNameMangler . fst)
+  -- First create the data type
   let conDataType = TyApp (TyCon (UnQual (Ident "Ptr"))) unit_tycon
       cname = Ident $ T.unpack $ smokeClassName c
       conDecl = QualConDecl loc [] [] $ ConDecl cname [UnBangedTy conDataType]
       ddecl = DataDecl loc NewType [] cname [] [conDecl] []
-  return (EAbs (UnQual cname), [ddecl])
+      thisType = TyCon (UnQual cname)
+
+  -- Now make it an instance of its own class, as well as all of its
+  -- parents.
+  let is = smokeClassName c : smokeClassParents c
+  instances <- mapM (makeSuperclassInstances thisType) is
+  return (EAbs (UnQual cname), ddecl : instances)
+  where
+    -- FIXME need all transitive parents
+    makeSuperclassInstances t superclass = do
+      cmangler <- asks (generatorClassNameMangler . fst)
+      let className = Ident $ T.unpack $ cmangler superclass
+      return $ InstDecl loc [] (UnQual className) [t] []
 
 -- | Make a typeclass for the method (if a typeclass for another
 -- method of the same name hasn't already been made).  Instances will
