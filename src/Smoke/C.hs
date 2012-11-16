@@ -11,7 +11,10 @@ module Smoke.C (
   smokeInitialize,
   ClassHierarchy,
   classHierarchy,
-  smokeClassTransitiveParents
+  smokeClassTransitiveParents,
+  c_smokeInvokeMethod,
+  SmokeHandle,
+  Index
   ) where
 
 import Control.Monad ( foldM )
@@ -312,9 +315,7 @@ foreign import ccall "smokeNumClasses" c_smokeNumClasses :: SmokeHandle -> IO CI
 foreign import ccall "smokeMethods" c_smokeMethods :: SmokeHandle -> IO SmokeMethodHandle
 foreign import ccall "smokeNumMethods" c_smokeNumMethods :: SmokeHandle -> IO CInt
 foreign import ccall "smokeMethodNames" c_smokeMethodNames :: SmokeHandle -> IO (Ptr CString)
-foreign import ccall "smokeNumMethodNames" c_smokeNumMethodNames :: SmokeHandle -> IO CInt
 foreign import ccall "smokeTypes" c_smokeTypes :: SmokeHandle -> IO SmokeTypeHandle
-foreign import ccall "smokeNumTypes" c_smokeNumTypes :: SmokeHandle -> IO CInt
 foreign import ccall "smokeArgumentList" c_smokeArgumentList :: SmokeHandle -> IO (Ptr Index)
 foreign import ccall "smokeInheritanceList" c_smokeInheritanceList :: SmokeHandle -> IO (Ptr Index)
 foreign import ccall "smokeModuleName" c_smokeModuleName :: SmokeHandle -> IO CString

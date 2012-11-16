@@ -16,7 +16,8 @@ cabal-version:       >=1.10
 
 library
   default-language: Haskell2010
-  exposed-modules: Smoke.C,
+  exposed-modules: Smoke,
+                   Smoke.C,
                    Smoke.Gen
   other-modules: Smoke.Gen.PrivateModule,
                  Smoke.Gen.Monad,

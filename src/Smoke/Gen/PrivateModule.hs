@@ -49,7 +49,7 @@ generateModuleInvoker = do
       exportClause = EVar (UnQual (Ident funcName))
       varTy = TyCon (UnQual (Ident "SmokeHandle"))
       ffiDecl = ForImp loc CCall (PlaySafe False) smokeVarName (Ident smokeVarName) varTy
-      body = App (Var (UnQual (Ident "c_smokeInvokeMethod"))) (Var (UnQual (Ident smokeVarName)))
+      body = App (Var (UnQual (Ident "smokeInvokeMethod"))) (Var (UnQual (Ident smokeVarName)))
       wrapperDecl = FunBind [Match loc (Ident funcName) [] Nothing (UnGuardedRhs body) (BDecls [])]
   return (exportClause, [ffiDecl, wrapperDecl])
   where

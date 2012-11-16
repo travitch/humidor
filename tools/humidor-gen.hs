@@ -1,11 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main ( main ) where
 
-import Control.Monad ( forM_ )
-import Data.List ( intercalate )
-import Data.Text ()
-import Text.Printf
-
 import Smoke.C
 import Smoke.Gen
 

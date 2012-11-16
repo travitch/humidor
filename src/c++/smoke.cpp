@@ -49,19 +49,9 @@ extern "C" {
     return smoke->methodNames;
   }
 
-  const int smokeNumMethodNames(Smoke *smoke)
-  {
-    return smoke->numMethodNames;
-  }
-
   Smoke::Type* smokeTypes(Smoke *smoke)
   {
     return smoke->types;
-  }
-
-  int smokeNumTypes(Smoke *smoke)
-  {
-    return smoke->numTypes;
   }
 
   short* smokeArgumentList(Smoke *smoke)
