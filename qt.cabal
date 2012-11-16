@@ -31,9 +31,9 @@ library
   extra-lib-dirs: /tmp/smoke/root/lib /unsup/qt-4.8.0/lib
   extra-libraries: smokebase smokeqtcore smokeqtgui QtCore QtGui
 
-executable hsqtest
+executable humidor-gen
   default-language: Haskell2010
-  main-is: hsqtest.hs
+  main-is: humidor-gen.hs
   build-depends: base == 4.*, text, qt
-  hs-source-dirs: test
+  hs-source-dirs: tools
   ghc-options: -Wall
