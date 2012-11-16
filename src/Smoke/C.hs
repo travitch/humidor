@@ -31,10 +31,10 @@ import Foreign.Storable
 data Smoke
 type SmokeHandle = Ptr Smoke
 
-newtype Index = I Int
-
 -- FIXME: Figure out sizes and alignments in a configure script or
 -- something
+
+type Index = CShort
 
 data CSmokeClass =
   CSmokeClass { csmokeClassName :: Text
@@ -59,7 +59,7 @@ instance Storable CSmokeClass where
     size <- c_smokeClassSize ptr
     return CSmokeClass { csmokeClassName = T.pack cname
                        , csmokeClassExternal = extByte /= 0
-                       , csmokeClassParents = toIndex parents
+                       , csmokeClassParents = parents
                        , csmokeClassCallMethod = nullPtr
                        , csmokeClassEnum = nullPtr
                        , csmokeClassFlags = flags
@@ -89,13 +89,13 @@ instance Storable CSmokeMethod where
     flags <- c_smokeMethodFlags ptr
     ret <- c_smokeMethodRet ptr
     meth <- c_smokeMethodMethod ptr
-    return $ CSmokeMethod { csmokeMethodClassIndex = toIndex cid
-                          , csmokeMethodNameIndex = toIndex name
-                          , csmokeMethodArgsIndex = toIndex args
+    return $ CSmokeMethod { csmokeMethodClassIndex = cid
+                          , csmokeMethodNameIndex = name
+                          , csmokeMethodArgsIndex = args
                           , csmokeMethodNumArgs = fromIntegral numArgs
                           , csmokeMethodFlags = flags
-                          , csmokeMethodRetIndex = toIndex ret
-                          , csmokeMethodMethodIndex = toIndex meth
+                          , csmokeMethodRetIndex = ret
+                          , csmokeMethodMethodIndex = meth
                           }
   poke = undefined
 
@@ -116,11 +116,8 @@ instance Storable CSmokeType where
     name <- if sp /= nullPtr then peekCString sp else return "void"
     cid <- c_smokeTypeClassId ptr
     flags <- c_smokeTypeFlags ptr
-    return $ CSmokeType (T.pack name) (toIndex cid) flags
+    return $ CSmokeType (T.pack name) cid flags
   poke = undefined
-
-toIndex :: CInt -> Index
-toIndex = I . fromIntegral
 
 ptrSize :: Int
 ptrSize = sizeOf (nullPtr :: Ptr ())
@@ -169,8 +166,8 @@ loadSmokeModule h = do
 
 fromCClass :: Ptr CShort -> Map Int CSmokeClass -> CSmokeClass -> IO SmokeClass
 fromCClass il classIdMap cc = do
-  let (I pix) = csmokeClassParents cc
-  parentClasses <- untilM (==0) (peekElemOff il) [pix..]
+  let pix = csmokeClassParents cc
+  parentClasses <- untilM (==0) (peekElemOff il) [fromIntegral pix..]
   return SmokeClass { smokeClassMethods = []
                     , smokeClassExternal = csmokeClassExternal cc
                     , smokeClassParents = mapMaybe lookupParent parentClasses
@@ -185,27 +182,27 @@ fromCClass il classIdMap cc = do
 data ArgumentMapper = ArgumentMapper (Ptr CShort) SmokeTypeHandle
 
 argumentTypes :: ArgumentMapper -> Index -> IO [CSmokeType]
-argumentTypes (ArgumentMapper a t) (I ix) = do
+argumentTypes (ArgumentMapper a t) ix = do
   -- use @ix@ as an index into the list of argument lists.  Read off
   -- all of the shorts (using peekElemOff) until one is zero.
-  typeIndices <- untilM (==0) (peekElemOff a) [ix..]
+  typeIndices <- untilM (==0) (peekElemOff a) [fromIntegral ix..]
   mapM (peekElemOff t . fromIntegral) typeIndices
 
 returnType :: ArgumentMapper -> Index -> IO CSmokeType
-returnType (ArgumentMapper _ t) (I ix) =
-  peekElemOff t ix
+returnType (ArgumentMapper _ t) ix =
+  peekElemOff t (fromIntegral ix)
 
 buildSmokeClasses :: Ptr CString
                      -> ArgumentMapper
-                     -> Map Int SmokeClass
+                     -> Map Index SmokeClass
                      -> CSmokeMethod
-                     -> IO (Map Int SmokeClass)
+                     -> IO (Map Index SmokeClass)
 buildSmokeClasses methodNames argMapper acc cmeth = do
   -- Look up the class id of the current method and add this method to
   -- it.
-  let I nameIndex = csmokeMethodNameIndex cmeth
-      I cindex = csmokeMethodClassIndex cmeth
-  mname <- peekElemOff methodNames nameIndex >>= peekCString
+  let nameIndex = csmokeMethodNameIndex cmeth
+      cindex = csmokeMethodClassIndex cmeth
+  mname <- peekElemOff methodNames (fromIntegral nameIndex) >>= peekCString
   ats <- argumentTypes argMapper (csmokeMethodArgsIndex cmeth)
   rt <- returnType argMapper (csmokeMethodRetIndex cmeth)
   let smeth = SmokeMethod { smokeMethodName = T.pack mname
@@ -318,22 +315,23 @@ foreign import ccall "smokeMethodNames" c_smokeMethodNames :: SmokeHandle -> IO 
 foreign import ccall "smokeNumMethodNames" c_smokeNumMethodNames :: SmokeHandle -> IO CInt
 foreign import ccall "smokeTypes" c_smokeTypes :: SmokeHandle -> IO SmokeTypeHandle
 foreign import ccall "smokeNumTypes" c_smokeNumTypes :: SmokeHandle -> IO CInt
-foreign import ccall "smokeArgumentList" c_smokeArgumentList :: SmokeHandle -> IO (Ptr CShort)
-foreign import ccall "smokeInheritanceList" c_smokeInheritanceList :: SmokeHandle -> IO (Ptr CShort)
+foreign import ccall "smokeArgumentList" c_smokeArgumentList :: SmokeHandle -> IO (Ptr Index)
+foreign import ccall "smokeInheritanceList" c_smokeInheritanceList :: SmokeHandle -> IO (Ptr Index)
 foreign import ccall "smokeModuleName" c_smokeModuleName :: SmokeHandle -> IO CString
 foreign import ccall "free" c_free :: Ptr () -> IO ()
 foreign import ccall "smokeClassName" c_smokeClassName :: SmokeClassHandle -> IO CString
 foreign import ccall "smokeClassExternal" c_smokeClassExternal :: SmokeClassHandle -> IO CInt
-foreign import ccall "smokeClassParents" c_smokeClassParents :: SmokeClassHandle -> IO CInt
+foreign import ccall "smokeClassParents" c_smokeClassParents :: SmokeClassHandle -> IO Index
 foreign import ccall "smokeClassFlags" c_smokeClassFlags :: SmokeClassHandle -> IO CUInt
 foreign import ccall "smokeClassSize" c_smokeClassSize :: SmokeClassHandle -> IO CInt
-foreign import ccall "smokeMethodClassId" c_smokeMethodClassId :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodName" c_smokeMethodName :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodArgs" c_smokeMethodArgs :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodClassId" c_smokeMethodClassId :: SmokeMethodHandle -> IO Index
+foreign import ccall "smokeMethodName" c_smokeMethodName :: SmokeMethodHandle -> IO Index
+foreign import ccall "smokeMethodArgs" c_smokeMethodArgs :: SmokeMethodHandle -> IO Index
 foreign import ccall "smokeMethodNumArgs" c_smokeMethodNumArgs :: SmokeMethodHandle -> IO CInt
 foreign import ccall "smokeMethodFlags" c_smokeMethodFlags :: SmokeMethodHandle -> IO CUInt
-foreign import ccall "smokeMethodRet" c_smokeMethodRet :: SmokeMethodHandle -> IO CInt
-foreign import ccall "smokeMethodMethod" c_smokeMethodMethod :: SmokeMethodHandle -> IO CInt
+foreign import ccall "smokeMethodRet" c_smokeMethodRet :: SmokeMethodHandle -> IO Index
+foreign import ccall "smokeMethodMethod" c_smokeMethodMethod :: SmokeMethodHandle -> IO Index
 foreign import ccall "smokeTypeName" c_smokeTypeName :: SmokeTypeHandle -> IO CString
-foreign import ccall "smokeTypeClassId" c_smokeTypeClassId :: SmokeTypeHandle -> IO CInt
+foreign import ccall "smokeTypeClassId" c_smokeTypeClassId :: SmokeTypeHandle -> IO Index
 foreign import ccall "smokeTypeFlags" c_smokeTypeFlags :: SmokeTypeHandle -> IO CUInt
+foreign import ccall "smokeInvokeMethod" c_smokeInvokeMethod :: SmokeHandle -> Index -> Index -> Ptr () -> Ptr () -> IO ()

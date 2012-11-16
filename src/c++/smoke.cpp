@@ -89,7 +89,7 @@ extern "C" {
     return klass->external;
   }
 
-  int smokeClassParents(Smoke::Class *klass)
+  Smoke::Index smokeClassParents(Smoke::Class *klass)
   {
     return klass->parents;
   }
@@ -104,17 +104,17 @@ extern "C" {
     return klass->size;
   }
 
-  int smokeMethodClassId(Smoke::Method *m)
+  Smoke::Index smokeMethodClassId(Smoke::Method *m)
   {
     return m->classId;
   }
 
-  int smokeMethodName(Smoke::Method *m)
+  Smoke::Index smokeMethodName(Smoke::Method *m)
   {
     return m->name;
   }
 
-  int smokeMethodArgs(Smoke::Method *m)
+  Smoke::Index smokeMethodArgs(Smoke::Method *m)
   {
     return m->args;
   }
@@ -129,12 +129,12 @@ extern "C" {
     return m->flags;
   }
 
-  int smokeMethodRet(Smoke::Method *m)
+  Smoke::Index smokeMethodRet(Smoke::Method *m)
   {
     return m->ret;
   }
 
-  int smokeMethodMethod(Smoke::Method *m)
+  Smoke::Index smokeMethodMethod(Smoke::Method *m)
   {
     return m->method;
   }
@@ -144,7 +144,7 @@ extern "C" {
     return t->name;
   }
 
-  int smokeTypeClassId(Smoke::Type *t)
+  Smoke::Index smokeTypeClassId(Smoke::Type *t)
   {
     return t->classId;
   }
@@ -154,7 +154,11 @@ extern "C" {
     return t->flags;
   }
 
-
+  void smokeInvokeMethod(Smoke *smoke, Smoke::Index classIx,
+      Smoke::Index methodIx, void *self, void *stack)
+  {
+    smoke->classes[classIx].classFn(methodIx, self, (Smoke::Stack)stack);
+  }
 }
 
 #if defined(PROBE)

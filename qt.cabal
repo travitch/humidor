@@ -18,7 +18,9 @@ library
   default-language: Haskell2010
   exposed-modules: Smoke.C,
                    Smoke.Gen
-  -- other-modules:
+  other-modules: Smoke.Gen.PrivateModule,
+                 Smoke.Gen.Monad,
+                 Smoke.Gen.SmokeImport
   build-depends: base == 4.*, containers, directory, mtl, filepath, text,
                  haskell-src-exts
   c-sources: src/c++/smoke.cpp

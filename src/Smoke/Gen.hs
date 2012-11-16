@@ -7,7 +7,6 @@ module Smoke.Gen (
   ) where
 
 import Control.Monad.Reader
-import qualified Data.Char as C
 import Data.Map ( Map )
 import qualified Data.Map as M
 import Data.Monoid
@@ -19,48 +18,9 @@ import System.Directory
 import System.FilePath
 
 import Smoke.C
+import Smoke.Gen.Monad
+import Smoke.Gen.PrivateModule
 
-data GeneratorConfig =
-  GeneratorConfig { generatorModuleNameMap :: Text -> Text
-                    -- ^ A function to modify the Smoke module name
-                    -- (perhaps stripping off a prefix) used as the root
-                    -- of all generated Haskell modules. (default: id)
-                  , generatorMethodClassNameMap :: Text -> Text
-                    -- ^ A transformation applied to the name of a
-                    -- method to produce the typeclass name for that
-                    -- method.  This must begin with a capital
-                    -- letter. (default: HasMethod+{capitalize})
-                  , generatorConstructorMangler :: Text -> Text
-                    -- ^ The name mangling to use for constructors.
-                    -- (default: new+{constructor})
-                  , generatorClassNameMangler :: Text -> Text
-                    -- ^ The name mangling scheme to turn a class name
-                    -- into the subclass typeclass marker
-                    -- (IsASubclassOfX).
-                  , generatorDestDir :: FilePath
-                    -- ^ The directory in which all of the generated
-                    -- Haskell module source files will be placed
-                  }
-
--- | A reasonable default configuration
-defaultGeneratorConfig :: FilePath -> GeneratorConfig
-defaultGeneratorConfig destDir =
-  GeneratorConfig { generatorModuleNameMap = id
-                  , generatorMethodClassNameMap = mtcname
-                  , generatorConstructorMangler = conName
-                  , generatorClassNameMangler = isAClass
-                  , generatorDestDir = destDir
-                  }
-  where
-    mtcname t = "HasMethod" `mappend` capitalize t
-    capitalize t =
-      case T.unpack t of
-        [] -> t
-        c:rest -> T.pack $ C.toUpper c : rest
-    conName = mappend "new"
-    isAClass = mappend "IsA"
-
-type Gen = ReaderT (GeneratorConfig, Text) IO
 
 -- | Generate Haskell modules for each class in a SmokeModule.  The
 -- files are placed in the given @destdir@ (from the config).
@@ -69,15 +29,20 @@ generateSmokeModule conf m =
   runReaderT action (conf, smokeModuleName m)
   where
     ch = classHierarchy m
-    action = mapM_ (generateSmokeClass ch) (smokeModuleClasses m)
+    action = do
+      -- Create a private module with some helpers for this SmokeModule.
+      -- This includes the method invoke dispatcher.
+      generateSmokeModulePrivate
+      -- Now create a module for each Qt class
+      mapM_ (generateSmokeClass ch) (smokeModuleClasses m)
+
 
 locationForClass :: SmokeClass -> Gen FilePath
 locationForClass c = do
   moduleName <- asks snd
   destDir <- asks (generatorDestDir . fst)
   modNameMap <- asks (generatorModuleNameMap . fst)
-  let undot ch = if ch == '.' then '/' else ch
-      modPath = T.unpack $ T.map undot (modNameMap moduleName)
+  let modPath = moduleToPath (modNameMap moduleName)
   return $ destDir </> modPath </> typeModuleName <.> "hs"
   where
     cname = smokeClassName c
@@ -108,11 +73,12 @@ generateSmokeClass h c = do
   (tdsExp, tds) <- makeClassTypeDefinition loc h c
   -- Make a typeclass for each non-constructor method
   (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
+  mimp <- privateModuleImport
   let tcs = M.elems tcMap
       prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
       decls = tds ++ tcs
       exports = tdsExp : tcExp
-      m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [] decls
+      m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [mimp] decls
   lift $ writeFile fname (prettyPrint m)
 
 unwrapFunctionName :: Name
@@ -201,7 +167,7 @@ makeClassForMethod loc c a@(exports, acc) m
 -- >     allocaArray 3 $ \(a :: Ptr StackItem) -> do
 -- >       poke (a `advancePtr` 1) a1
 -- >       poke (a `advancePtr` 2) a2
--- >       callQtGuiMethod classIx methIx (unwrapQPrinter self) a
+-- >       qtguiInvokeMethod classIx methIx (unwrapQPrinter self) a
 -- >       rv <- peek (castPtr a)
 -- >       return (unwrapInt rv)
 
