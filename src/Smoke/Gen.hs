@@ -68,7 +68,8 @@ generateSmokeModule :: GeneratorConfig -> SmokeModule -> IO ()
 generateSmokeModule conf m =
   runReaderT action (conf, smokeModuleName m)
   where
-    action = mapM_ generateSmokeClass (smokeModuleClasses m)
+    ch = classHierarchy m
+    action = mapM_ (generateSmokeClass ch) (smokeModuleClasses m)
 
 locationForClass :: SmokeClass -> Gen FilePath
 locationForClass c = do
@@ -96,15 +97,15 @@ classModuleName c = do
 -- be done via Enum instances.  The definitions of the constant values
 -- should be private and defined via top-level unsafePerformIO calls
 -- (CAFs)
-generateSmokeClass :: SmokeClass -> Gen ()
-generateSmokeClass c = do
+generateSmokeClass :: ClassHierarchy -> SmokeClass -> Gen ()
+generateSmokeClass h c = do
   fname <- locationForClass c
   let loc = SrcLoc fname 0 0
   lift $ createDirectoryIfMissing True (dropFileName fname)
   mname <- classModuleName c
   -- Make a data type declaration for the class, and declare it as an
   -- instance of this class as well as all of its parent classes
-  (tdsExp, tds) <- makeClassTypeDefinition loc c
+  (tdsExp, tds) <- makeClassTypeDefinition loc h c
   -- Make a typeclass for each non-constructor method
   (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
   let tcs = M.elems tcMap
@@ -114,32 +115,47 @@ generateSmokeClass c = do
       m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [] decls
   lift $ writeFile fname (prettyPrint m)
 
+unwrapFunctionName :: Name
+unwrapFunctionName = Ident "unwrapPtr"
 
 -- | Something like:
 --
--- > data QClassName
--- > instance IsAQClass QClassName
--- > instance IsAQParent QClassName
-makeClassTypeDefinition :: SrcLoc -> SmokeClass -> Gen (ExportSpec, [Decl])
-makeClassTypeDefinition loc c = do
+-- > newtype QClassName = QClassName { unwrapPtr :: Ptr () }
+-- > instance IsAQClass QClassName where
+-- >   unwrapQClass = unwrapPtr
+-- > instance IsAQParent QClassName where
+-- >   unwrapQParent = unwrapPtr
+--
+-- The concrete type is opaque to clients (since unwrapPtr is not
+-- exported).  All of the method instances call the unwrapQXXX that
+-- they want and pass the resulting void* to C++.
+--
+-- Technically, users can also call these unwrap functions since they
+-- will be exported.  Users should not count on this being useful or
+-- even a stable part of the interface.
+makeClassTypeDefinition :: SrcLoc -> ClassHierarchy -> SmokeClass
+                           -> Gen (ExportSpec, [Decl])
+makeClassTypeDefinition loc h c = do
   -- First create the data type
   let conDataType = TyApp (TyCon (UnQual (Ident "Ptr"))) unit_tycon
       cname = Ident $ T.unpack $ smokeClassName c
-      conDecl = QualConDecl loc [] [] $ ConDecl cname [UnBangedTy conDataType]
+      conDecl = QualConDecl loc [] [] $ RecDecl cname [([unwrapFunctionName], UnBangedTy conDataType)]
       ddecl = DataDecl loc NewType [] cname [] [conDecl] []
       thisType = TyCon (UnQual cname)
 
   -- Now make it an instance of its own class, as well as all of its
   -- parents.
-  let is = smokeClassName c : smokeClassParents c
+  let is = smokeClassName c : smokeClassTransitiveParents h c
   instances <- mapM (makeSuperclassInstances thisType) is
   return (EAbs (UnQual cname), ddecl : instances)
   where
-    -- FIXME need all transitive parents
     makeSuperclassInstances t superclass = do
       cmangler <- asks (generatorClassNameMangler . fst)
       let className = Ident $ T.unpack $ cmangler superclass
-      return $ InstDecl loc [] (UnQual className) [t] []
+          unwrapName = Ident $ T.unpack $ "unpack" `mappend` superclass
+          rhs = UnGuardedRhs $ Var (UnQual unwrapFunctionName)
+          insDec = InsDecl $ FunBind [Match loc unwrapName [] Nothing rhs (BDecls [])]
+      return $ InstDecl loc [] (UnQual className) [t] [insDec]
 
 -- | Make a typeclass for the method (if a typeclass for another
 -- method of the same name hasn't already been made).  Instances will
@@ -174,6 +190,20 @@ makeClassForMethod loc c a@(exports, acc) m
         return $ (EThingAll (UnQual cname) : exports, M.insert methodName tc acc)
   where
     methodName = smokeMethodName m
+
+-- For instances, generate code like the following
+--
+-- > import Foreign.Marshal.Array ( allocaArray, advancePtr )
+-- > import Foreign.Storable ( peek, poke )
+-- >
+-- > instance HasMethodFoo (Int, Int) (IO Int) where
+-- >   foo self (a1, a2) = do
+-- >     allocaArray 3 $ \(a :: Ptr StackItem) -> do
+-- >       poke (a `advancePtr` 1) a1
+-- >       poke (a `advancePtr` 2) a2
+-- >       callQtGuiMethod classIx methIx (unwrapQPrinter self) a
+-- >       rv <- peek (castPtr a)
+-- >       return (unwrapInt rv)
 
 -- | The type for a method declaration is (for normal methods):
 --

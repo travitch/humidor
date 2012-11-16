@@ -8,14 +8,20 @@ module Smoke.C (
   methodIsCopyConstructor,
   methodIsEnum,
   CSmokeType(..),
-  smokeInitialize
+  smokeInitialize,
+  ClassHierarchy,
+  classHierarchy,
+  smokeClassTransitiveParents
   ) where
 
 import Control.Monad ( foldM )
 import Data.Bits
+import Data.List ( foldl' )
 import Data.Map ( Map )
 import qualified Data.Map as M
 import Data.Maybe ( mapMaybe )
+import Data.Monoid
+import qualified Data.Set as S
 import Data.Text ( Text )
 import qualified Data.Text as T
 import Foreign.C
@@ -253,6 +259,27 @@ data SmokeModule =
   SmokeModule { smokeModuleClasses :: [SmokeClass]
               , smokeModuleName :: Text
               }
+
+-- | A representation of the class hierarchy in a module
+data ClassHierarchy = CH (Map Text [Text])
+
+-- | Construct the class hierarchy for a module.
+classHierarchy :: SmokeModule -> ClassHierarchy
+classHierarchy = CH . foldr buildHierarchy mempty . smokeModuleClasses
+  where
+    buildHierarchy c =
+      M.insert (smokeClassName c) (smokeClassParents c)
+
+-- | Find all transitive parents (excluding the class itself) of the
+-- given class.
+smokeClassTransitiveParents :: ClassHierarchy -> SmokeClass -> [Text]
+smokeClassTransitiveParents (CH h) = S.toList . go mempty . smokeClassName
+  where
+    go s n =
+      case M.lookup n h of
+        Nothing -> s
+        Just [] -> s
+        Just ps -> foldl' go (S.union (S.fromList ps) s) ps
 
 -- Unmarshal helpers
 
