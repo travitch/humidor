@@ -39,9 +39,9 @@ generateSmokeModule conf m =
 
 locationForClass :: SmokeClass -> Gen FilePath
 locationForClass c = do
-  moduleName <- asks snd
-  destDir <- asks (generatorDestDir . fst)
-  modNameMap <- asks (generatorModuleNameMap . fst)
+  moduleName <- askModuleName
+  destDir <- askModuleConf generatorDestDir
+  modNameMap <- askModuleConf generatorModuleNameMap
   let modPath = moduleToPath (modNameMap moduleName)
   return $ destDir </> modPath </> typeModuleName <.> "hs"
   where
@@ -50,8 +50,8 @@ locationForClass c = do
 
 classModuleName :: SmokeClass -> Gen String
 classModuleName c = do
-  moduleName <- asks snd
-  modNameMap <- asks (generatorModuleNameMap . fst)
+  moduleName <- askModuleName
+  modNameMap <- askModuleConf generatorModuleNameMap
   return $ T.unpack (modNameMap moduleName) <.> T.unpack typeModuleName
   where
     cname = smokeClassName c
@@ -116,7 +116,7 @@ makeClassTypeDefinition loc h c = do
   return (EAbs (UnQual cname), ddecl : instances)
   where
     makeSuperclassInstances t superclass = do
-      cmangler <- asks (generatorClassNameMangler . fst)
+      cmangler <- askModuleConf generatorClassNameMangler
       let className = Ident $ T.unpack $ cmangler superclass
           unwrapName = Ident $ T.unpack $ "unpack" `mappend` superclass
           rhs = UnGuardedRhs $ Var (UnQual unwrapFunctionName)
@@ -138,8 +138,8 @@ makeClassForMethod :: SrcLoc -> SmokeClass -> ([ExportSpec], Map Text Decl)
 makeClassForMethod loc c a@(exports, acc) m
   | methodIsDestructor m || methodIsCopyConstructor m || methodIsEnum m = return a
   | otherwise = do
-    nameMap <- asks (generatorMethodClassNameMap . fst)
-    cmangler <- asks (generatorConstructorMangler . fst)
+    nameMap <- askModuleConf generatorMethodClassNameMap
+    cmangler <- askModuleConf generatorConstructorMangler
     case M.lookup methodName acc of
       Just _ -> return a
       Nothing -> do
@@ -185,7 +185,7 @@ makeMethodType :: SmokeClass -> SmokeMethod -> Gen Type
 makeMethodType c m =
   case methodIsConstructor m of
     False -> do
-      cmangler <- asks (generatorClassNameMangler . fst)
+      cmangler <- askModuleConf generatorClassNameMangler
       let cname = cmangler $ smokeClassName c
           constraint = UnQual $ Ident $ T.unpack cname
       return $ TyForall Nothing [ClassA constraint [selfVar]] ft
