@@ -14,7 +14,8 @@ module Smoke.C (
   smokeClassTransitiveParents,
   c_smokeInvokeMethod,
   SmokeHandle,
-  Index
+  Index,
+  smokeEnumValue
   ) where
 
 import Control.Monad ( foldM )
@@ -165,6 +166,7 @@ loadSmokeModule h = do
   cs <- foldM (buildSmokeClasses methodNames argMapper) s0 methodPtrs
   return SmokeModule { smokeModuleName = T.pack modName
                      , smokeModuleClasses = M.elems cs
+                     , smokeModuleHandle = h
                      }
 
 fromCClass :: Ptr CShort -> Map Int CSmokeClass -> CSmokeClass -> IO SmokeClass
@@ -213,6 +215,7 @@ buildSmokeClasses methodNames argMapper acc cmeth = do
                           , smokeMethodFlags = csmokeMethodFlags cmeth
                           , smokeMethodRet = rt
                           , smokeMethodIndex = csmokeMethodMethodIndex cmeth
+                          , smokeMethodClassIndex = cindex
                           }
   case M.lookup cindex acc of
     Nothing -> return acc
@@ -232,6 +235,7 @@ data SmokeMethod =
               , smokeMethodFlags :: CUInt
               , smokeMethodRet :: CSmokeType
               , smokeMethodIndex :: Index
+              , smokeMethodClassIndex :: Index
               }
 
 methodIsDestructor :: SmokeMethod -> Bool
@@ -258,6 +262,7 @@ data SmokeClass =
 data SmokeModule =
   SmokeModule { smokeModuleClasses :: [SmokeClass]
               , smokeModuleName :: Text
+              , smokeModuleHandle :: SmokeHandle
               }
 
 -- | A representation of the class hierarchy in a module
@@ -309,6 +314,9 @@ untilM p action ixs = go [] ixs
         True -> return (reverse acc)
         False -> go (elt : acc) rest
 
+smokeEnumValue :: SmokeHandle -> Index -> Index -> Integer
+smokeEnumValue h cix mix = fromIntegral $ c_smokeEnumValue h cix mix
+
 foreign import ccall "smokeInitialize" c_smokeInitialize :: IO (Ptr SmokeHandle)
 foreign import ccall "smokeClasses" c_smokeClasses :: SmokeHandle -> IO SmokeClassHandle
 foreign import ccall "smokeNumClasses" c_smokeNumClasses :: SmokeHandle -> IO CInt
@@ -336,3 +344,4 @@ foreign import ccall "smokeTypeName" c_smokeTypeName :: SmokeTypeHandle -> IO CS
 foreign import ccall "smokeTypeClassId" c_smokeTypeClassId :: SmokeTypeHandle -> IO Index
 foreign import ccall "smokeTypeFlags" c_smokeTypeFlags :: SmokeTypeHandle -> IO CUInt
 foreign import ccall "smokeInvokeMethod" c_smokeInvokeMethod :: SmokeHandle -> Index -> Index -> Ptr () -> Ptr () -> IO ()
+foreign import ccall "smokeEnumValue" c_smokeEnumValue :: SmokeHandle -> Index -> Index -> CLong

@@ -20,6 +20,7 @@ library
                    Smoke.C,
                    Smoke.Gen
   other-modules: Smoke.Gen.PrivateModule,
+                 Smoke.Gen.Enum,
                  Smoke.Gen.Monad,
                  Smoke.Gen.SmokeImport
   build-depends: base == 4.*, containers, directory, mtl, filepath, text,

@@ -149,6 +149,14 @@ extern "C" {
   {
     smoke->classes[classIx].classFn(methodIx, self, (Smoke::Stack)stack);
   }
+
+  long smokeEnumValue(Smoke *smoke, Smoke::Index classIx,
+      Smoke::Index enumIx)
+  {
+    Smoke::StackItem s[1];
+    smoke->classes[classIx].classFn(enumIx, NULL, s);
+    return s[0].s_enum;
+  }
 }
 
 #if defined(PROBE)

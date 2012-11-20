@@ -19,6 +19,7 @@ import System.FilePath
 
 import Smoke.C
 import Smoke.Gen.Monad
+import Smoke.Gen.Enum
 import Smoke.Gen.PrivateModule
 
 -- FIXME: Do not generate a module for external classes (rather, import
@@ -32,11 +33,11 @@ generateSmokeModule conf m =
   where
     ch = classHierarchy m
     action = do
+      -- Now create a module for each Qt class
+      mapM_ (generateSmokeClass m ch) (smokeModuleClasses m)
       -- Create a private module with some helpers for this SmokeModule.
       -- This includes the method invoke dispatcher.
       generateSmokeModulePrivate
-      -- Now create a module for each Qt class
-      mapM_ (generateSmokeClass ch) (smokeModuleClasses m)
 
 
 locationForClass :: SmokeClass -> Gen FilePath
@@ -64,12 +65,13 @@ classModuleName c = do
 -- be done via Enum instances.  The definitions of the constant values
 -- should be private and defined via top-level unsafePerformIO calls
 -- (CAFs)
-generateSmokeClass :: ClassHierarchy -> SmokeClass -> Gen ()
-generateSmokeClass h c = do
+generateSmokeClass :: SmokeModule -> ClassHierarchy -> SmokeClass -> Gen ()
+generateSmokeClass smod h c = do
   fname <- locationForClass c
   let loc = SrcLoc fname 0 0
   lift $ createDirectoryIfMissing True (dropFileName fname)
   mname <- classModuleName c
+  (eExp, edecl) <- makeEnumsForClass smod c
   -- Make a data type declaration for the class, and declare it as an
   -- instance of this class as well as all of its parent classes
   (tdsExp, tds) <- makeClassTypeDefinition loc h c
@@ -78,8 +80,9 @@ generateSmokeClass h c = do
   mimp <- privateModuleImport
   let tcs = M.elems tcMap
       prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
-      decls = tds ++ tcs
-      exports = tdsExp : tcExp
+      decls = edecl ++ tds ++ tcs
+      -- Make sure to put the class exports last
+      exports = tdsExp : eExp ++ tcExp
       m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [mimp] decls
   lift $ writeFile fname (prettyPrint m)
 
