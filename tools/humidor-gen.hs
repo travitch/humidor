@@ -1,34 +1,42 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main ( main ) where
 
+import Control.Applicative
+import Options.Applicative
+
 import Smoke.C
 import Smoke.Gen
 
+data Opts = Opts { qDestDir :: FilePath
+                 , qCabalTemplate :: FilePath
+                 , qLibrary :: String
+                 }
+          deriving (Show)
+
+cmdOpts :: Parser Opts
+cmdOpts = Opts
+  <$> strOption ( long "output"
+                & short 'o'
+                & metavar "DIRECTORY"
+                & help "The directory to put the generated package in"
+                )
+  <*> strOption ( long "cabalTemplate"
+                & short 'c'
+                & metavar "FILE"
+                & help "The template cabal file")
+  <*> argument str ( metavar "LIBRARY" )
+
 main :: IO ()
-main = do
+main = execParser args >>= realMain
+  where
+    args = info (helper <*> cmdOpts)
+      ( fullDesc
+      & progDesc "Generate Haskell bindings for LIBRARY and place the results in DIRECTORY"
+      & header "humidor-gen - generate Haskell bindings to Qt libraries")
+
+realMain :: Opts -> IO ()
+realMain opts = do
   smokeModules <- smokeInitialize
-  let conf = (defaultGeneratorConfig "/tmp/genqt") { generatorModuleNameMap = const "Qt.Gui" }
+  let conf0 = defaultGeneratorConfig (qDestDir opts) (qCabalTemplate opts)
+      conf = conf0 { generatorModuleNameMap = const "Qt.Gui" }
   mapM_ (generateSmokeModule conf) smokeModules
-  {-
-  putStrLn ("Found " ++ show (length smokeModules) ++ " smoke modules")
-  mapM_ printSmoke smokeModules
-  return ()
-
-printSmoke :: SmokeModule -> IO ()
-printSmoke m = do
-  _ <- printf "Module: %s\n" (smokeModuleName m)
-  forM_ (smokeModuleClasses m) $ \c -> do
-    _ <- printf "  %s [%s]\n" (smokeClassName c) (parentClassString c)
-    forM_ (smokeClassMethods c) $ \f -> do
-      printf "    %s %s(%s)\n" (returnTypeString f) (smokeMethodName f) (argumentTypeString f)
-
-parentClassString :: SmokeClass -> String
-parentClassString = intercalate ", " . smokeClassParents
-
-returnTypeString :: SmokeMethod -> String
-returnTypeString = csmokeTypeName . smokeMethodRet
-
-argumentTypeString :: SmokeMethod -> String
-argumentTypeString m =
-  intercalate ", " (map csmokeTypeName (smokeMethodArgs m))
--}

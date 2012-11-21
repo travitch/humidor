@@ -18,9 +18,11 @@ import System.Directory
 import System.FilePath
 
 import Smoke.C
+import Smoke.Gen.Cabal
 import Smoke.Gen.Monad
 import Smoke.Gen.Enum
 import Smoke.Gen.PrivateModule
+import Smoke.Gen.Util
 
 -- FIXME: Do not generate a module for external classes (rather, import
 -- them into the types module and re-export them)
@@ -35,30 +37,12 @@ generateSmokeModule conf m =
     action = do
       -- Now create a module for each Qt class
       mapM_ (generateSmokeClass m ch) (smokeModuleClasses m)
+      -- Take the template cabal file and add the list of generated
+      -- modules.
+      expandCabalTemplate m
       -- Create a private module with some helpers for this SmokeModule.
       -- This includes the method invoke dispatcher.
       generateSmokeModulePrivate
-
-
-locationForClass :: SmokeClass -> Gen FilePath
-locationForClass c = do
-  moduleName <- askModuleName
-  destDir <- askModuleConf generatorDestDir
-  modNameMap <- askModuleConf generatorModuleNameMap
-  let modPath = moduleToPath (modNameMap moduleName)
-  return $ destDir </> modPath </> typeModuleName <.> "hs"
-  where
-    cname = smokeClassName c
-    typeModuleName = T.unpack $ T.replace "::" "/" cname
-
-classModuleName :: SmokeClass -> Gen String
-classModuleName c = do
-  moduleName <- askModuleName
-  modNameMap <- askModuleConf generatorModuleNameMap
-  return $ T.unpack (modNameMap moduleName) <.> T.unpack typeModuleName
-  where
-    cname = smokeClassName c
-    typeModuleName = T.replace "::" "." cname
 
 -- | FIXME: Enums (which can be found by checking method flags) should
 -- be represented as top-level ADTs.  The mapping to numeric IDs can
@@ -66,25 +50,27 @@ classModuleName c = do
 -- should be private and defined via top-level unsafePerformIO calls
 -- (CAFs)
 generateSmokeClass :: SmokeModule -> ClassHierarchy -> SmokeClass -> Gen ()
-generateSmokeClass smod h c = do
-  fname <- locationForClass c
-  let loc = SrcLoc fname 0 0
-  lift $ createDirectoryIfMissing True (dropFileName fname)
-  mname <- classModuleName c
-  (eExp, edecl) <- makeEnumsForClass smod c
-  -- Make a data type declaration for the class, and declare it as an
-  -- instance of this class as well as all of its parent classes
-  (tdsExp, tds) <- makeClassTypeDefinition loc h c
-  -- Make a typeclass for each non-constructor method
-  (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
-  mimp <- privateModuleImport
-  let tcs = M.elems tcMap
-      prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
-      decls = edecl ++ tds ++ tcs
-      -- Make sure to put the class exports last
-      exports = tdsExp : eExp ++ tcExp
-      m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [mimp] decls
-  lift $ writeFile fname (prettyPrint m)
+generateSmokeClass smod h c
+  | skipClass c = return ()
+  | otherwise = do
+    fname <- locationForClass c
+    let loc = SrcLoc fname 0 0
+    lift $ createDirectoryIfMissing True (dropFileName fname)
+    mname <- classModuleName c
+    (eExp, edecl) <- makeEnumsForClass smod c
+    -- Make a data type declaration for the class, and declare it as an
+    -- instance of this class as well as all of its parent classes
+    (tdsExp, tds) <- makeClassTypeDefinition loc h c
+    -- Make a typeclass for each non-constructor method
+    (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
+    mimp <- privateModuleImport
+    let tcs = M.elems tcMap
+        prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
+        decls = edecl ++ tds ++ tcs
+        -- Make sure to put the class exports last
+        exports = tdsExp : eExp ++ tcExp
+        m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [mimp] decls
+    lift $ writeFile fname (prettyPrint m)
 
 unwrapFunctionName :: Name
 unwrapFunctionName = Ident "unwrapPtr"

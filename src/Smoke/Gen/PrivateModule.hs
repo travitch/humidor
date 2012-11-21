@@ -34,7 +34,7 @@ generateSmokeModulePrivate = do
   destDir <- askModuleConf generatorDestDir
   modNameMap <- askModuleConf generatorModuleNameMap
   (invokeExport, invokeDecls) <- generateModuleInvoker
-  let hmodFile = destDir </> moduleToPath (modNameMap moduleName) ++ "Private.hs"
+  let hmodFile = destDir </> "src" </> moduleToPath (modNameMap moduleName) ++ "Private.hs"
       loc = SrcLoc hmodFile 0 0
       exports = [invokeExport]
       imports = [smokeImport]

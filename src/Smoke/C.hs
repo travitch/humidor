@@ -2,6 +2,7 @@
 module Smoke.C (
   SmokeModule(..),
   SmokeClass(..),
+  classIsUndefined,
   SmokeMethod(..),
   methodIsDestructor,
   methodIsConstructor,
@@ -258,6 +259,9 @@ data SmokeClass =
              , smokeClassParents :: [Text] -- [SmokeClass]
              , smokeClassFlags :: CUInt
              }
+
+classIsUndefined :: SmokeClass -> Bool
+classIsUndefined = (/=0) . (.&. 0x10) . smokeClassFlags
 
 data SmokeModule =
   SmokeModule { smokeModuleClasses :: [SmokeClass]

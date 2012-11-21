@@ -34,16 +34,20 @@ data GeneratorConfig =
                   , generatorDestDir :: FilePath
                     -- ^ The directory in which all of the generated
                     -- Haskell module source files will be placed
+                  , generatorCabalTemplate :: FilePath
+                    -- ^ A template Cabal file (to be filled in with
+                    -- HStringTemplate)
                   }
 
 -- | A reasonable default configuration
-defaultGeneratorConfig :: FilePath -> GeneratorConfig
-defaultGeneratorConfig destDir =
+defaultGeneratorConfig :: FilePath -> FilePath -> GeneratorConfig
+defaultGeneratorConfig destDir cabalTpl =
   GeneratorConfig { generatorModuleNameMap = id
                   , generatorMethodClassNameMap = mtcname
                   , generatorConstructorMangler = conName
                   , generatorClassNameMangler = isAClass
                   , generatorDestDir = destDir
+                  , generatorCabalTemplate = cabalTpl
                   }
   where
     mtcname t = "HasMethod" `mappend` capitalize t
