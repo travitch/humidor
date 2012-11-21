@@ -183,14 +183,14 @@ makeMethodType c m =
   case methodIsConstructor m of
     False -> do
       cmangler <- askModuleConf generatorClassNameMangler
-      let cname = cmangler $ smokeClassName c
-          constraint = UnQual $ Ident $ T.unpack $ dropOuterClass cname
+      let cname = cmangler $ dropOuterClass $ smokeClassName c
+          constraint = UnQual $ Ident $ T.unpack cname
       return $ TyForall Nothing [ClassA constraint [selfVar]] ft
     True -> return argsType
   where
     argTy = TyVar $ Ident "xargs"
     retTy = TyVar $ Ident "xret"
-    ioTy = TyCon $ UnQual $ Ident "Qt"
+    ioTy = TyCon $ UnQual $ Ident "IO"
     argsType = TyFun argTy (TyApp ioTy retTy)
     ft = TyFun selfVar argsType
     selfVar = TyVar $ Ident "self"
