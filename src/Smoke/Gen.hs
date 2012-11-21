@@ -56,10 +56,10 @@ generateSmokeClass :: SmokeModule -> ClassHierarchy -> SmokeClass -> Gen ()
 generateSmokeClass smod h c
   | skipClass c = return ()
   | otherwise = do
-    fname <- locationForClass c
+    mname <- classModuleName c
+    fname <- moduleToFilePath mname
     let loc = SrcLoc fname 0 0
     lift $ createDirectoryIfMissing True (dropFileName fname)
-    mname <- classModuleName c
     (eExp, edecl) <- makeEnumsForClass smod c
     -- Make a data type declaration for the class, and declare it as an
     -- instance of this class as well as all of its parent classes
@@ -75,7 +75,8 @@ generateSmokeClass smod h c
         decls = edecl ++ tds ++ tcs
         -- Make sure to put the class exports last
         exports = tdsExp : eExp ++ tcExp
-        m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [fimp,simp,mimp,cimp] decls
+        modNam = ModuleName $ T.unpack mname
+        m = Module loc modNam [prag] Nothing (Just exports) [fimp,simp,mimp,cimp] decls
     lift $ writeFile fname (prettyPrint m)
 
 unwrapFunctionName :: Name

@@ -1,7 +1,9 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Smoke.Gen.Cabal ( expandCabalTemplate ) where
 
 import Control.Monad.Trans
-import Data.List ( intercalate )
+import Data.Monoid
+import qualified Data.Text as T
 import System.FilePath
 import Text.StringTemplate
 
@@ -18,7 +20,7 @@ expandCabalTemplate m = do
   tpl <- lift $ readFile cabalTpl
   let cabalFilename = takeFileName cabalTpl
       indent = "        "
-      modSubString = intercalate ",\n" $ map (indent++) mods
+      modSubString = T.intercalate ",\n" $ map (mappend indent) mods
       cabalFilePath = dest </> cabalFilename
-      cabalContent = render $ setAttribute "modules" modSubString (newSTMP tpl)
+      cabalContent = render $ setAttribute "modules" (T.unpack modSubString) (newSTMP tpl)
   lift $ writeFile cabalFilePath cabalContent

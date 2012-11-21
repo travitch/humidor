@@ -1,26 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Smoke.Gen.Util (
-  locationForClass,
   classModuleName,
   skipClass
   ) where
 
+import Data.Monoid
+import Data.Text ( Text )
 import qualified Data.Text as T
-import System.FilePath
 
 import Smoke.C
 import Smoke.Gen.Monad
-
-locationForClass :: SmokeClass -> Gen FilePath
-locationForClass c = do
-  moduleName <- askModuleName
-  destDir <- askModuleConf generatorDestDir
-  modNameMap <- askModuleConf generatorModuleNameMap
-  let modPath = moduleToPath (modNameMap moduleName)
-  return $ destDir </> "src" </> modPath </> typeModuleName <.> "hs"
-  where
-    cname = smokeClassName c
-    typeModuleName = T.unpack $ T.replace "::" "/" cname
 
 skipClass :: SmokeClass -> Bool
 skipClass c = classIsUndefined c || isIterator || isGlobalSpace
@@ -30,11 +19,11 @@ skipClass c = classIsUndefined c || isIterator || isGlobalSpace
     isGlobalSpace = "QGlobalSpace" == smokeClassName c
     isIterator = T.isInfixOf "::iterator" (smokeClassName c)
 
-classModuleName :: SmokeClass -> Gen String
+classModuleName :: SmokeClass -> Gen Text
 classModuleName c = do
   moduleName <- askModuleName
   modNameMap <- askModuleConf generatorModuleNameMap
-  return $ T.unpack (modNameMap moduleName) <.> T.unpack typeModuleName
+  return $ (modNameMap moduleName) `mappend` "." `mappend` typeModuleName
   where
     cname = smokeClassName c
     typeModuleName = T.replace "::" "." cname
