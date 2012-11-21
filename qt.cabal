@@ -22,6 +22,7 @@ library
         Smoke.Gen
   other-modules:
         Smoke.Gen.Cabal,
+        Smoke.Gen.Classes,
         Smoke.Gen.PrivateModule,
         Smoke.Gen.Enum,
         Smoke.Gen.Monad,

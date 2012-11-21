@@ -19,6 +19,7 @@ import System.FilePath
 
 import Smoke.C
 import Smoke.Gen.Cabal
+import Smoke.Gen.Classes
 import Smoke.Gen.Monad
 import Smoke.Gen.Enum
 import Smoke.Gen.PrivateModule
@@ -40,6 +41,8 @@ generateSmokeModule conf m =
       -- Take the template cabal file and add the list of generated
       -- modules.
       expandCabalTemplate m
+      -- Create a module declaring all of the classes for object types
+      generateSmokeClassesModule m
       -- Create a private module with some helpers for this SmokeModule.
       -- This includes the method invoke dispatcher.
       generateSmokeModulePrivate
@@ -64,12 +67,15 @@ generateSmokeClass smod h c
     -- Make a typeclass for each non-constructor method
     (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
     mimp <- privateModuleImport
+    cimp <- classesModuleImport
     let tcs = M.elems tcMap
+        fimp = ImportDecl loc (ModuleName "Foreign.Ptr") False False Nothing Nothing Nothing
+        simp = ImportDecl loc (ModuleName "Smoke") False False Nothing Nothing Nothing
         prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
         decls = edecl ++ tds ++ tcs
         -- Make sure to put the class exports last
         exports = tdsExp : eExp ++ tcExp
-        m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [mimp] decls
+        m = Module loc (ModuleName mname) [prag] Nothing (Just exports) [fimp,simp,mimp,cimp] decls
     lift $ writeFile fname (prettyPrint m)
 
 unwrapFunctionName :: Name

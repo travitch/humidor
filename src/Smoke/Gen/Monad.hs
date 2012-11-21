@@ -4,6 +4,7 @@ module Smoke.Gen.Monad (
   GeneratorConfig(..),
   defaultGeneratorConfig,
   moduleToPath,
+  moduleToFilePath,
   askModuleName,
   askModuleConf
   ) where
@@ -13,6 +14,7 @@ import Data.Char as C
 import Data.Monoid
 import Data.Text ( Text )
 import qualified Data.Text as T
+import System.FilePath
 
 data GeneratorConfig =
   GeneratorConfig { generatorModuleNameMap :: Text -> Text
@@ -68,5 +70,12 @@ askModuleName = asks snd
 
 moduleToPath :: Text -> FilePath
 moduleToPath = map undot . T.unpack
+  where
+    undot ch = if ch == '.' then '/' else ch
+
+moduleToFilePath :: Text -> Gen FilePath
+moduleToFilePath m = do
+  dest <- askModuleConf generatorDestDir
+  return $ dest </> "src" </> map undot (T.unpack m) <.> "hs"
   where
     undot ch = if ch == '.' then '/' else ch
