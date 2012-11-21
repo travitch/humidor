@@ -13,5 +13,7 @@ import Smoke.C
 smokeInvokeMethod :: SmokeHandle -> Index -> Index -> Ptr () -> Ptr () -> IO ()
 smokeInvokeMethod = c_smokeInvokeMethod
 
+-- | A restricted Enum that only converts its elements to Integer
+-- values.  Qt enums are instances of this class.
 class QEnum a where
   qenumToInt :: a -> Integer
