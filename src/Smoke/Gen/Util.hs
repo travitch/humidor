@@ -23,8 +23,11 @@ locationForClass c = do
     typeModuleName = T.unpack $ T.replace "::" "/" cname
 
 skipClass :: SmokeClass -> Bool
-skipClass c = classIsUndefined c || isIterator
+skipClass c = classIsUndefined c || isIterator || isGlobalSpace
   where
+    -- This is a fake class that holds all of the globals in Qt.  This
+    -- should probably be handled separately.
+    isGlobalSpace = "QGlobalSpace" == smokeClassName c
     isIterator = T.isInfixOf "::iterator" (smokeClassName c)
 
 classModuleName :: SmokeClass -> Gen String
