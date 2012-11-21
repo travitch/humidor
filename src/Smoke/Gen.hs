@@ -147,7 +147,14 @@ makeClassForMethod loc c a@(exports, acc) m
             tc = ClassDecl loc ctx cname [argsVar, retVar] [] [mdecl]
         return $ (EThingAll (UnQual cname) : exports, M.insert methodName tc acc)
   where
-    methodName = smokeMethodName m
+    methodName = sanitizeMethodName $ smokeMethodName m
+
+sanitizeMethodName :: Text -> Text
+sanitizeMethodName t
+  | t == "data" = "data_"
+  | t == "type" = "type_"
+  | t == "instance" = "instance_"
+  | otherwise = t
 
 dropOuterClass :: Text -> Text
 dropOuterClass s
