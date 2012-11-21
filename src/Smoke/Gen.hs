@@ -95,7 +95,7 @@ makeClassTypeDefinition :: SrcLoc -> ClassHierarchy -> SmokeClass
 makeClassTypeDefinition loc h c = do
   -- First create the data type
   let conDataType = TyApp (TyCon (UnQual (Ident "Ptr"))) unit_tycon
-      cname = Ident $ T.unpack $ smokeClassName c
+      cname = Ident $ T.unpack $ dropOuterClass $ smokeClassName c
       conDecl = QualConDecl loc [] [] $ RecDecl cname [([unwrapFunctionName], UnBangedTy conDataType)]
       ddecl = DataDecl loc NewType [] cname [] [conDecl] []
       thisType = TyCon (UnQual cname)
@@ -103,7 +103,8 @@ makeClassTypeDefinition loc h c = do
   -- Now make it an instance of its own class, as well as all of its
   -- parents.
   let is = smokeClassName c : smokeClassTransitiveParents h c
-  instances <- mapM (makeSuperclassInstances thisType) is
+      is' = map dropOuterClass is
+  instances <- mapM (makeSuperclassInstances thisType) is'
   return (EAbs (UnQual cname), ddecl : instances)
   where
     makeSuperclassInstances t superclass = do
@@ -127,7 +128,7 @@ makeClassTypeDefinition loc h c = do
 makeClassForMethod :: SrcLoc -> SmokeClass -> ([ExportSpec], Map Text Decl)
                       -> SmokeMethod -> Gen ([ExportSpec], Map Text Decl)
 makeClassForMethod loc c a@(exports, acc) m
-  | methodIsDestructor m || methodIsCopyConstructor m || methodIsEnum m = return a
+  | methodIsOperator m || methodIsDestructor m || methodIsCopyConstructor m || methodIsEnum m = return a
   | otherwise = do
     nameMap <- askModuleConf generatorMethodClassNameMap
     cmangler <- askModuleConf generatorConstructorMangler
@@ -147,6 +148,11 @@ makeClassForMethod loc c a@(exports, acc) m
         return $ (EThingAll (UnQual cname) : exports, M.insert methodName tc acc)
   where
     methodName = smokeMethodName m
+
+dropOuterClass :: Text -> Text
+dropOuterClass s
+  | T.isInfixOf "::" s = T.dropWhile (==':') $ T.dropWhile (/=':') s
+  | otherwise = s
 
 -- For instances, generate code like the following
 --
@@ -178,7 +184,7 @@ makeMethodType c m =
     False -> do
       cmangler <- askModuleConf generatorClassNameMangler
       let cname = cmangler $ smokeClassName c
-          constraint = UnQual $ Ident $ T.unpack cname
+          constraint = UnQual $ Ident $ T.unpack $ dropOuterClass cname
       return $ TyForall Nothing [ClassA constraint [selfVar]] ft
     True -> return argsType
   where

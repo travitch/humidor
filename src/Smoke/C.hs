@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls #-}
+{-# LANGUAGE ForeignFunctionInterface, EmptyDataDecls, OverloadedStrings #-}
 module Smoke.C (
   SmokeModule(..),
   SmokeClass(..),
@@ -8,6 +8,7 @@ module Smoke.C (
   methodIsConstructor,
   methodIsCopyConstructor,
   methodIsEnum,
+  methodIsOperator,
   CSmokeType(..),
   smokeInitialize,
   ClassHierarchy,
@@ -251,6 +252,9 @@ methodIsConstructor = (/=0) . (.&. 0x20) . smokeMethodFlags
 -- | Oddly enough, enum values appear as methods.
 methodIsEnum :: SmokeMethod -> Bool
 methodIsEnum = (/=0) . (.&. 0x10) . smokeMethodFlags
+
+methodIsOperator :: SmokeMethod -> Bool
+methodIsOperator m = T.isInfixOf "operator" (smokeMethodName m)
 
 data SmokeClass =
   SmokeClass { smokeClassName :: Text
