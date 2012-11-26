@@ -61,19 +61,25 @@ generateSmokeClass smod h c
     (tdsExp, tds) <- makeClassTypeDefinition loc h c
     -- Make a typeclass for each non-constructor method
     (tcExp, tcMap) <- foldM (makeClassForMethod loc c) mempty (smokeClassMethods c)
-    mimp <- privateModuleImport
-    cimp <- classesModuleImport
+    impPriv <- privateModuleImport
+    impClass <- classesModuleImport
     let tcs = M.elems tcMap
         hideSyms = [IThingAll (Ident "Either")]
-        fimp = ImportDecl loc (ModuleName "Foreign.Ptr") False False Nothing Nothing Nothing
-        simp = ImportDecl loc (ModuleName "Smoke") False False Nothing Nothing Nothing
-        pimp = ImportDecl loc (ModuleName "Prelude") False False Nothing Nothing (Just (True, hideSyms))
+        impForeign = ImportDecl loc (ModuleName "Foreign.Ptr") False False Nothing Nothing Nothing
+        impSmoke = ImportDecl loc (ModuleName "Smoke") False False Nothing Nothing Nothing
+        impPrelude = ImportDecl loc (ModuleName "Prelude") False False Nothing Nothing (Just (True, hideSyms))
         prag = LanguagePragma loc [Ident "MultiParamTypeClasses"]
         decls = edecl ++ tds ++ tcs
         -- Make sure to put the class exports last
         exports = tdsExp : eExp ++ tcExp
         modNam = ModuleName $ T.unpack mname
-        m = Module loc modNam [prag] Nothing (Just exports) [pimp,fimp,simp,mimp,cimp] decls
+        imports = [ impPrelude
+                  , impForeign
+                  , impSmoke
+                  , impPriv
+                  , impClass
+                  ]
+        m = Module loc modNam [prag] Nothing (Just exports) imports decls
     lift $ writeFile fname (prettyPrint m)
 
 unwrapFunctionName :: Name
