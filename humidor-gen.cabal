@@ -41,6 +41,6 @@ library
 executable humidor-gen
   default-language: Haskell2010
   main-is: humidor-gen.hs
-  build-depends: base == 4.*, optparse-applicative, text, qt
+  build-depends: base == 4.*, optparse-applicative, text, humidor-gen
   hs-source-dirs: tools
   ghc-options: -Wall
