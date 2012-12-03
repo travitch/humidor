@@ -14,6 +14,6 @@ library
 $modules$
   other-modules:
         Qt.GuiPrivate
-  build-depends: base == 4.*, text, qt
+  build-depends: base == 4.*, text, humidor
   ghc-options: -Wall
   hs-source-dirs: src
