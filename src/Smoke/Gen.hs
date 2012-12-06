@@ -20,8 +20,9 @@ import System.FilePath
 import Smoke.C
 import Smoke.Gen.Cabal
 import Smoke.Gen.Classes
-import Smoke.Gen.Monad
 import Smoke.Gen.Enum
+import Smoke.Gen.Haskell
+import Smoke.Gen.Monad
 import Smoke.Gen.PrivateModule
 import Smoke.Gen.Util
 
@@ -72,7 +73,7 @@ generateSmokeClass smod h c
         decls = edecl ++ tds ++ tcs
         -- Make sure to put the class exports last
         exports = tdsExp : eExp ++ tcExp
-        modNam = ModuleName $ T.unpack mname
+        modNam = moduleName mname
         imports = [ impPrelude
                   , impForeign
                   , impSmoke
@@ -105,7 +106,7 @@ makeClassTypeDefinition :: SrcLoc -> ClassHierarchy -> SmokeClass
 makeClassTypeDefinition loc h c = do
   -- First create the data type
   let conDataType = TyApp (TyCon (UnQual (Ident "Ptr"))) unit_tycon
-      cname = Ident $ T.unpack $ dropOuterClass $ smokeClassName c
+      cname = nameIdent $ dropOuterClass $ smokeClassName c
       conDecl = QualConDecl loc [] [] $ RecDecl cname [([unwrapFunctionName], UnBangedTy conDataType)]
       ddecl = DataDecl loc NewType [] cname [] [conDecl] []
       thisType = TyCon (UnQual cname)
@@ -119,9 +120,9 @@ makeClassTypeDefinition loc h c = do
   where
     makeSuperclassInstances t superclass = do
       cmangler <- askModuleConf generatorClassNameMangler
-      let className = Ident $ T.unpack $ cmangler superclass
-          unwrapName = Ident $ T.unpack $ "unpack" `mappend` superclass
-          rhs = UnGuardedRhs $ Var (UnQual unwrapFunctionName)
+      let className = nameIdent $ cmangler superclass
+          unwrapName = nameIdent $ "unpack" `mappend` superclass
+          rhs = UnGuardedRhs $ uvar unwrapFunctionName
           insDec = InsDecl $ FunBind [Match loc unwrapName [] Nothing rhs (BDecls [])]
       return $ InstDecl loc [] (UnQual className) [t] [insDec]
 
@@ -147,12 +148,12 @@ makeClassForMethod loc c a@(exports, acc) m
       Nothing -> do
         mtype <- makeMethodType c m
         let ctx = []
-            cname = Ident $ T.unpack $ nameMap methodName
+            cname = nameIdent $ nameMap methodName
             mname = case methodIsConstructor m of
-              False -> Ident $ T.unpack methodName
-              True -> Ident $ T.unpack (cmangler methodName)
-            argsVar = UnkindedVar $ Ident "xargs"
-            retVar = UnkindedVar $ Ident "xret"
+              False -> nameIdent methodName
+              True -> nameIdent (cmangler methodName)
+            argsVar = uktyVarBind "xargs"
+            retVar = uktyVarBind "xret"
             mdecl = ClsDecl $ TypeSig loc [mname] mtype
             tc = ClassDecl loc ctx cname [argsVar, retVar] [] [mdecl]
         return $ (EThingAll (UnQual cname) : exports, M.insert methodName tc acc)
@@ -201,16 +202,16 @@ makeMethodType c m =
     False -> do
       cmangler <- askModuleConf generatorClassNameMangler
       let cname = cmangler $ dropOuterClass $ smokeClassName c
-          constraint = UnQual $ Ident $ T.unpack cname
+          constraint = unqualIdent cname
       return $ TyForall Nothing [ClassA constraint [selfVar]] ft
     True -> return argsType
   where
-    argTy = TyVar $ Ident "xargs"
-    retTy = TyVar $ Ident "xret"
+    argTy = tyVar "xargs"
+    retTy = tyVar "xret"
     ioTy = TyCon $ UnQual $ Ident "IO"
     argsType = TyFun argTy (TyApp ioTy retTy)
     ft = TyFun selfVar argsType
-    selfVar = TyVar $ Ident "self"
+    selfVar = tyVar "self"
 
 -- Note, using the IsAX constraints here is very useful because we can
 -- define all of the IsAX classes in a convenient base package.  Then

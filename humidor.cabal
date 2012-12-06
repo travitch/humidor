@@ -25,6 +25,7 @@ library
         Smoke.Gen.Classes,
         Smoke.Gen.PrivateModule,
         Smoke.Gen.Enum,
+        Smoke.Gen.Haskell,
         Smoke.Gen.Monad,
         Smoke.Gen.SmokeImport,
         Smoke.Gen.Util
@@ -32,11 +33,12 @@ library
                  haskell-src-exts, HStringTemplate
   c-sources: src/c++/smoke.cpp
   extra-libraries: stdc++
+  pkgconfig-depends: QtCore, QtGui
   cc-options: -I/tmp/smoke/root/include -DHAVE_QTGUI
   ghc-options: -Wall
   hs-source-dirs: src
-  extra-lib-dirs: /tmp/smoke/root/lib /unsup/qt-4.8.0/lib
-  extra-libraries: smokebase smokeqtcore smokeqtgui QtCore QtGui
+  extra-lib-dirs: /tmp/smoke/root/lib
+  extra-libraries: smokebase smokeqtcore smokeqtgui
 
 executable humidor-gen
   default-language: Haskell2010
