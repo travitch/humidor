@@ -29,6 +29,10 @@ import Smoke.Gen.Util
 -- FIXME: Do not generate a module for external classes (rather, import
 -- them into the types module and re-export them)
 
+-- FIXME: For arguments of type QVector or similar, take any instance
+-- of Foldable.  QByteArray should be mapped to a strict ByteString.
+-- Use Text for QString
+
 -- | Generate Haskell modules for each class in a SmokeModule.  The
 -- files are placed in the given @destdir@ (from the config).
 generateSmokeModule :: GeneratorConfig -> SmokeModule -> IO ()
